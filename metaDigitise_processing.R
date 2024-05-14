@@ -2,9 +2,10 @@
 
 library(metaDigitise)
 
-dir <- "~/Documents/Microbial_Effects_MetaAnalysis_plot_digitization" 
+dir <- paste0(getwd(),"/paper_digitization") 
 
 
 data <- metaDigitise(dir = dir)
 
 
+View(data)
