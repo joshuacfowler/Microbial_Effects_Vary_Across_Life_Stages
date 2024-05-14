@@ -1,7 +1,6 @@
 # Title: How commonly do microbial effects vary across host life stages? #####
 # Purpose: Reads in data from literature search and runs meta-analytic regression models
 # Authors: Josh Fowler and Gwen Pohlmann #####
-# test from gwen
 # Date: May 14, 2024 #####
 
 library(renv)
@@ -38,7 +37,8 @@ length(unique(raw_effects_df$study_number))
 effects_df <- raw_effects_df %>% 
   mutate(
     RII  = (mean_aposymbiotic - mean_symbiotic)/(mean_aposymbiotic + mean_symbiotic),
-    cohensD = (mean_symbiotic - mean_aposymbiotic)/sqrt((sd_aposymbiotic^2 + sd_symbiotic^2)/2))
+    cohensD = (mean_aposymbiotic - mean_symbiotic)/sqrt((sd_aposymbiotic^2 + sd_symbiotic^2)/2),
+    hedgesG = (mean_aposymbiotic - mean_symbiotic)/sqrt((n_aposymbiotic-1)*sd_aposymbiotic)
 
 
 
