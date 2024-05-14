@@ -25,7 +25,8 @@ path <- joshpath
 
 raw_effects_df <- read_csv(file = paste0(path,("Microbial Effects Literature Search(Effect_sizes).csv"))) %>% 
   filter(!is.na(mean_symbiotic)) %>% 
-  mutate(across(mean_symbiotic:mean_aposymbiotic),  as.numeric(.x))
+  mutate(mean_symbiotic = as.numeric(mean_symbiotic),
+         mean_aposymbiotic = as.numeric(mean_aposymbiotic))
 
 length(unique(raw_effects_df$study_number))
 
@@ -34,5 +35,25 @@ length(unique(raw_effects_df$study_number))
 # Calculating effects sizes
 
 effects_df <- raw_effects_df %>% 
-  mutate(cohensD = cohen.d(mean_symbiotic, mean_aposymbiotic))
+  mutate(
+    RII  = (mean_aposymbiotic - mean_symbiotic)/(mean_aposymbiotic + mean_symbiotic),
+    cohensD = (mean_symbiotic - mean_aposymbiotic)/sqrt((sd_aposymbiotic^2 + sd_symbiotic^2)/2))
+
+
+
+ggplot(effects_df) +
+  geom_histogram(aes(x = RII))+facet_wrap(~metric_category)
+
+
+
+
+
+ggplot(effects_df) +
+  geom_histogram(aes(x = cohensD))+facet_wrap(~metric_category)
+
+
+
+#############################################################################
+####### Fitting meta   #######
+#############################################################################
 
