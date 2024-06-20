@@ -8,7 +8,7 @@ library(readxl)
 
 # read in the inital screening
 
-lit_search <- read_excel("~/Downloads/Microbial Effects Literature Search.xlsx", sheet = "Lit_search") %>% 
+lit_search <- read_excel("~/Downloads/Microbial Effects Literature Search(1).xlsx", sheet = "Lit_search") %>% 
   filter(include == "yes") %>% 
   separate_wider_delim(cols = host_taxa, delim = ",", names = paste0("host_species", 1:15), too_few = "align_start") %>% 
   separate_wider_delim(cols = symbiont_taxa, delim = ",", names = paste0("symbiont_species", 1:15), too_few = "align_start") %>% 
@@ -34,9 +34,15 @@ View(lit_search)
 write_csv(lit_search, "MicrobialEffectsMetaAnalysis_effect_sizes_blank.csv")
 
 
-write_csv(as_tibble(unique(lit_search$study_number)), "MicrobialEffectsMetaAnalysis_studies_as_of_2024-03-14.csv")
-  
+write_csv(as_tibble(unique(lit_search$study_number)), "MicrobialEffectsMetaAnalysis_studies_as_of_2024-06-14.csv")
+already_pivoted = read_csv("MicrobialEffectsMetaAnalysis_studies_as_of_2024-03-14.csv")
            
+
+
+lit_search_remaining <- lit_search %>% 
+  filter(!(study_number %in% already_pivoted$value))
+
+write_csv(lit_search_remaining, "MicrobialEffectsMetaAnalysis_effect_sizes_blank.csv")
 
 
 # Just for fun looking to see if species are in compadre database
