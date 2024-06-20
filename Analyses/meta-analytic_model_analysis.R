@@ -4,7 +4,7 @@
 # Date: May 14, 2024 #####
 
 library(renv)
-renv::init()
+# renv::init()
 
 
 library(tidyverse)
@@ -20,14 +20,14 @@ library(brms)
 #############################################################################
 # This data is stored in Teams; we have downloaded the most recent version to a local directory as of May 14, 2024
 joshpath <- c("~/Dropbox/Microbial_Effects_Metaanalysis/")
-gwenpath <- 
+# gwenpath <- 
   
   
-# path <- joshpath
-path <- gwenpath
+path <- joshpath
+# path <- gwenpath
 
 
-raw_effects_df <- read_csv(file = paste0(path,("Microbial Effects Literature Search(Effect_sizes).csv"))) %>% 
+raw_effects_df <- read_csv(file = paste0(path,("Microbial Effects Literature Search(Effects_sizes).csv"))) %>% 
   filter(!is.na(mean_symbiotic)) %>% 
   mutate(mean_symbiotic = as.numeric(mean_symbiotic),
          mean_aposymbiotic = as.numeric(mean_aposymbiotic))
@@ -40,20 +40,20 @@ length(unique(raw_effects_df$study_number))
 
 effects_df <- raw_effects_df %>% 
   mutate(
-    RII  = (mean_aposymbiotic - mean_symbiotic)/(mean_aposymbiotic + mean_symbiotic),
-    cohensD = (mean_aposymbiotic - mean_symbiotic)/sqrt((sd_aposymbiotic^2 + sd_symbiotic^2)/2)) #hedgesG = (mean_aposymbiotic - mean_symbiotic)/sqrt((n_aposymbiotic-1)*sd_aposymbiotic)
+    RII  = (mean_symbiotic - mean_aposymbiotic)/(mean_aposymbiotic + mean_symbiotic),
+    cohensD = ( mean_symbiotic-mean_aposymbiotic)/sqrt((sd_aposymbiotic^2 + sd_symbiotic^2)/2)) #hedgesG = (mean_aposymbiotic - mean_symbiotic)/sqrt((n_aposymbiotic-1)*sd_aposymbiotic)
 
 
 
 ggplot(effects_df) +
-  geom_histogram(aes(x = RII))+facet_wrap(~metric_category)
+  geom_histogram(aes(x = RII))+facet_wrap(~metric_category, scales = "free")
 
 
 
 
 
 ggplot(effects_df) +
-  geom_histogram(aes(x = cohensD))+facet_wrap(~metric_category)
+  geom_histogram(aes(x = cohensD))+facet_wrap(~metric_category, scales = "free")
 
 
 
@@ -62,13 +62,13 @@ ggplot(effects_df) +
 #############################################################################
 
 # Testing out simpler models
-fit <- lm(data = effects_df, formula = RII ~ metric_category*lifestage_description)
+fit <- lm(data = effects_df, formula = RII ~ 0 + lifestage_description)
 summary(fit)
 
 
 # Getting predictions from the model
 
-prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category), lifestage_description = unique(effects_df$lifestage_description))
+prediction_df <- expand.grid( lifestage_description = unique(effects_df$lifestage_description))
 
 preds <- predict(fit, newdata = prediction_df, type = "response", se.fit = TRUE)
 
@@ -79,21 +79,21 @@ prediction_df <- bind_cols(prediction_df, preds) %>%
 
 ggplot(data = prediction_df)+
   geom_jitter(data = effects_df, aes( x= lifestage_description, y = RII), color = "blue", width = .1, alpha = .2)+
-  geom_point(aes(x = lifestage_description, y = fit), size = 3, alpha = .3) +
-  geom_linerange(aes(x = lifestage_description, ymin = lwr, ymax = upr)) +
-  facet_wrap(~metric_category) + theme_bw()
+  geom_point(aes(x = lifestage_description, y = fit), size = 3, alpha = .6) +
+  geom_linerange(aes(x = lifestage_description, ymin = lwr, ymax = upr)) + theme_bw()
 
 
 
   
   # with Cohens D
-  fit <- lm(data = effects_df, formula = cohensD ~ metric_category*lifestage_description)
+effects_df_filtered <- effects_df %>% filter(!is.na(cohensD))
+  fit <- lm(data = effects_df_filtered, formula = cohensD ~ lifestage_description)
   summary(fit)
   
   
   # Getting predictions from the model
   
-  prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category), lifestage_description = unique(effects_df$lifestage_description))
+  prediction_df <- expand.grid( lifestage_description = unique(effects_df_filtered$lifestage_description))
   
   preds <- predict(fit, newdata = prediction_df, type = "response", se.fit = TRUE)
   
@@ -102,10 +102,9 @@ ggplot(data = prediction_df)+
            lwr = fit - 1.96*se.fit)
   
   ggplot(data = prediction_df)+
-    geom_jitter(data = effects_df, aes( x= lifestage_description, y = RII), color = "blue", width = .1, alpha = .2)+
+    geom_jitter(data = effects_df_filtered, aes( x= lifestage_description, y = cohensD), color = "blue", width = .1, alpha = .2)+
     geom_point(aes(x = lifestage_description, y = fit), size = 3) +
-    geom_linerange(aes(x = lifestage_description, ymin = lwr, ymax = upr)) +
-    facet_wrap(~metric_category) + theme_bw()
+    geom_linerange(aes(x = lifestage_description, ymin = lwr, ymax = upr)) + theme_bw()
   
   
   
