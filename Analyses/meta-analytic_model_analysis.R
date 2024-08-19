@@ -9,8 +9,9 @@ library(renv)
 
 library(tidyverse)
 
-library(effsize)
+library(effsize) 
 
+library(lme4)
 library(rstan)
 library(brms)
 
@@ -30,7 +31,8 @@ path <- joshpath
 raw_effects_df <- read_csv(file = paste0(path,("Microbial Effects Literature Search(Effect_sizes).csv"))) %>% 
   filter(!is.na(mean_symbiotic)) %>% 
   mutate(mean_symbiotic = as.numeric(mean_symbiotic),
-         mean_aposymbiotic = as.numeric(mean_aposymbiotic))
+         mean_aposymbiotic = as.numeric(mean_aposymbiotic)) 
+  # separate_wider_delim(symbiont_species, delim = " ", names = c("symbiont_genus"), too_many = "align_start")
 
 length(unique(raw_effects_df$study_number))
 
@@ -41,8 +43,8 @@ length(unique(raw_effects_df$study_number))
 effects_df <- raw_effects_df %>% 
   mutate(
     RII  = (mean_symbiotic - mean_aposymbiotic)/(mean_aposymbiotic + mean_symbiotic),
-    cohensD = ( mean_symbiotic-mean_aposymbiotic)/sqrt((sd_aposymbiotic^2 + sd_symbiotic^2)/2)) #hedgesG = (mean_aposymbiotic - mean_symbiotic)/sqrt((n_aposymbiotic-1)*sd_aposymbiotic)
-
+    cohensD = ( mean_symbiotic-mean_aposymbiotic)/sqrt((sd_aposymbiotic^2 + sd_symbiotic^2)/2)) %>% #hedgesG = (mean_aposymbiotic - mean_symbiotic)/sqrt((n_aposymbiotic-1)*sd_aposymbiotic)
+  mutate(experiment_label = paste(study_number, experiment_id, sep = "-"))
 
 
 ggplot(effects_df) +
@@ -62,8 +64,9 @@ ggplot(effects_df) +
 #############################################################################
 
 # Testing out simpler models
-fit <- lm(data = effects_df, formula = RII ~ 0 + metric_category*host_category)
-fit <- lm(data = effects_df, formula = RII ~ 0 + metric_category*host_category)
+fit <- lm(data = effects_df, formula = RII ~ 0 + metric_category)
+fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category+ (1|study_number)  )
+fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|study_number) + (1|experiment_id) )
 
 summary(fit)
 
@@ -71,9 +74,9 @@ summary(fit)
 # Getting predictions from the model
 
 prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category),
-                              host_category = unique(effects_df$host_category))
+                              study_number = NA)
 
-preds <- predict(fit, newdata = prediction_df, type = "response", se.fit = TRUE)
+preds <- predict(fit, newdat = prediction_df, se.fit = TRUE, re.form =  NA)
 
 prediction_df <- bind_cols(prediction_df, preds) %>% 
   mutate(upr = fit + 1.96*se.fit,
@@ -83,7 +86,7 @@ prediction_df <- bind_cols(prediction_df, preds) %>%
 ggplot(data = prediction_df)+
   geom_jitter(data = effects_df, aes( x= metric_category, y = RII), color = "blue", width = .1, alpha = .2)+
   geom_point(aes(x = metric_category, y = fit), size = 3, alpha = .6) +
-  geom_linerange(aes(x = metric_category, ymin = lwr, ymax = upr)) + facet_wrap(~host_category) + theme_bw()
+  geom_linerange(aes(x = metric_category, ymin = lwr, ymax = upr)) + theme_bw()
 
 
 
@@ -138,11 +141,27 @@ mcmc_pars <- list(
   chains = 3
 )
 
-fit <- brm(formula = RII ~ metric_category,
+fit <- brm(formula = RII ~ 0 + metric_category + (1|study_number),
            data = effects_df, 
+           family = "gaussian",
+           prior = c(set_prior("normal(0,5)", class = "b")))
             iter = mcmc_pars$iter,
            chains = mcmc_pars$chains,
            warmup = mcmc_pars$warmup)
+summary(fit)
+
+prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category),
+                              study_number = 31)
+
+preds <- fitted(fit, newdata = prediction_df, re_formula = NULL, allow_new_levels = TRUE)
+
+prediction_df <- bind_cols(prediction_df, preds) 
+
+
+ggplot(data = prediction_df)+
+  geom_jitter(data = effects_df, aes( x= metric_category, y = RII), color = "blue", width = .1, alpha = .2)+
+  geom_point(aes(x = metric_category, y = Estimate), size = 3) +
+  geom_linerange(aes(x = metric_category, ymin = Q2.5, ymax = Q97.5)) + theme_bw()
 
 
 
