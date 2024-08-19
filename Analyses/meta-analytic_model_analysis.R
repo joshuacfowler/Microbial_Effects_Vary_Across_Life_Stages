@@ -27,7 +27,7 @@ path <- joshpath
 # path <- gwenpath
 
 
-raw_effects_df <- read_csv(file = paste0(path,("Microbial Effects Literature Search(Effects_sizes).csv"))) %>% 
+raw_effects_df <- read_csv(file = paste0(path,("Microbial Effects Literature Search(Effect_sizes).csv"))) %>% 
   filter(!is.na(mean_symbiotic)) %>% 
   mutate(mean_symbiotic = as.numeric(mean_symbiotic),
          mean_aposymbiotic = as.numeric(mean_aposymbiotic))
@@ -53,7 +53,7 @@ ggplot(effects_df) +
 
 
 ggplot(effects_df) +
-  geom_histogram(aes(x = cohensD))+facet_wrap(~metric_category, scales = "free")
+  geom_histogram(aes(x = cohensD))+facet_wrap(~lifestage_description, scales = "free")
 
 
 
@@ -62,13 +62,16 @@ ggplot(effects_df) +
 #############################################################################
 
 # Testing out simpler models
-fit <- lm(data = effects_df, formula = RII ~ 0 + lifestage_description)
+fit <- lm(data = effects_df, formula = RII ~ 0 + metric_category*host_category)
+fit <- lm(data = effects_df, formula = RII ~ 0 + metric_category*host_category)
+
 summary(fit)
 
 
 # Getting predictions from the model
 
-prediction_df <- expand.grid( lifestage_description = unique(effects_df$lifestage_description))
+prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category),
+                              host_category = unique(effects_df$host_category))
 
 preds <- predict(fit, newdata = prediction_df, type = "response", se.fit = TRUE)
 
@@ -78,9 +81,9 @@ prediction_df <- bind_cols(prediction_df, preds) %>%
 
 
 ggplot(data = prediction_df)+
-  geom_jitter(data = effects_df, aes( x= lifestage_description, y = RII), color = "blue", width = .1, alpha = .2)+
-  geom_point(aes(x = lifestage_description, y = fit), size = 3, alpha = .6) +
-  geom_linerange(aes(x = lifestage_description, ymin = lwr, ymax = upr)) + theme_bw()
+  geom_jitter(data = effects_df, aes( x= metric_category, y = RII), color = "blue", width = .1, alpha = .2)+
+  geom_point(aes(x = metric_category, y = fit), size = 3, alpha = .6) +
+  geom_linerange(aes(x = metric_category, ymin = lwr, ymax = upr)) + facet_wrap(~host_category) + theme_bw()
 
 
 
@@ -135,8 +138,11 @@ mcmc_pars <- list(
   chains = 3
 )
 
-fit <- brm(formula = RII ~ metric_category*host_id,
+fit <- brm(formula = RII ~ metric_category,
            data = effects_df, 
             iter = mcmc_pars$iter,
            chains = mcmc_pars$chains,
            warmup = mcmc_pars$warmup)
+
+
+
