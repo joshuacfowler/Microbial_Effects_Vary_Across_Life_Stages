@@ -36,20 +36,8 @@ path <- gwenpath
 
 raw_effects_df <- read_csv(file = paste0(path,("20240906_effect_sizes.csv"))) %>% 
   filter(!is.na(mean_symbiotic)) %>% 
-<<<<<<< HEAD
-  mutate(mean_symbiotic = as.numeric(mean_symbiotic),
-         mean_aposymbiotic = as.numeric(mean_aposymbiotic),
-         n_symbiotic = as.numeric(n_symbiotic),
-         n_aposymbiotic = as.numeric(n_aposymbiotic)
-         )
-=======
-  mutate(across(c(mean_aposymbiotic, mean_symbiotic,
-                sd_aposymbiotic, sd_symbiotic,
-                se_aposymbiotic, se_symbiotic,
-                n_aposymbiotic, n_symbiotic), as.numeric))
->>>>>>> 3292921314a9e0291a6528e155b7af2296ad4f48
+  mutate(across(mean_symbiotic:n_aposymbiotic, as.numeric))
   # separate_wider_delim(symbiont_species, delim = " ", names = c("symbiont_genus"), too_many = "align_start")
-
 
 # find out how many distinct studies we have extracted data from
 length(unique(raw_effects_df$study_number))
@@ -60,23 +48,19 @@ length(unique(raw_effects_df$study_number))
 # also create a new column to combine study_number and experiment_id and treatment_id
 effects_df <- raw_effects_df %>% 
   mutate(
-    RII  = (mean_symbiotic - mean_aposymbiotic)/(mean_aposymbiotic + mean_symbiotic),
-<<<<<<< HEAD
-    cohensD = (mean_symbiotic-mean_aposymbiotic)/sqrt((sd_aposymbiotic^2 + sd_symbiotic^2)/2)
-    ) %>% #hedgesG = (mean_aposymbiotic - mean_symbiotic)/sqrt((n_aposymbiotic-1)*sd_aposymbiotic)
-  mutate(
-    calc_sd_symbiotic = case_when((is.na(sd_symbiotic)) & (!is.na(se_symbiotic)) & (!is.na(n_symbiotic)) ~ (se_symbiotic*(sqrt(n_symbiotic))), TRUE ~ NA),
-    calc_sd_aposymbiotic = case_when((is.na(sd_aposymbiotic)) & (!is.na(se_aposymbiotic)) & (!is.na(n_aposymbiotic)) ~ (se_aposymbiotic*(sqrt(n_aposymbiotic))), TRUE ~ NA),
-    calc_se_symbiotic = case_when((is.na(se_symbiotic)) & (!is.na(sd_symbiotic)) & (!is.na(n_symbiotic)) ~ (sd_symbiotic/(sqrt(n_symbiotic))), TRUE ~ NA),
-    calc_se_aposymbiotic = case_when((is.na(se_aposymbiotic)) & (!is.na(sd_aposymbiotic)) & (!is.na(n_aposymbiotic)) ~ (sd_aposymbiotic/(sqrt(n_aposymbiotic))), TRUE ~ NA)
+    calc_sd_symbiotic = case_when((is.na(sd_symbiotic)) & (!is.na(se_symbiotic)) & (!is.na(n_symbiotic)) ~ (se_symbiotic*(sqrt(n_symbiotic))), TRUE ~ sd_symbiotic),
+    calc_sd_aposymbiotic = case_when((is.na(sd_aposymbiotic)) & (!is.na(se_aposymbiotic)) & (!is.na(n_aposymbiotic)) ~ (se_aposymbiotic*(sqrt(n_aposymbiotic))), TRUE ~ sd_aposymbiotic),
+    calc_se_symbiotic = case_when((is.na(se_symbiotic)) & (!is.na(sd_symbiotic)) & (!is.na(n_symbiotic)) ~ (sd_symbiotic/(sqrt(n_symbiotic))), TRUE ~ se_symbiotic),
+    calc_se_aposymbiotic = case_when((is.na(se_aposymbiotic)) & (!is.na(sd_aposymbiotic)) & (!is.na(n_aposymbiotic)) ~ (sd_aposymbiotic/(sqrt(n_aposymbiotic))), TRUE ~ se_aposymbiotic)
   ) %>%
-  mutate(treatment_label = paste(study_number, experiment_id, treatment_id, sep = "-"))
-=======
-    cohensD = ( mean_symbiotic-mean_aposymbiotic)/sqrt((sd_aposymbiotic^2 + sd_symbiotic^2)/2),
+  mutate(
+    RII  = (mean_symbiotic - mean_aposymbiotic)/(mean_aposymbiotic + mean_symbiotic),
+    cohensD = (mean_symbiotic - mean_aposymbiotic)/sqrt((sd_aposymbiotic^2 + sd_symbiotic^2)/2),
     pooled_sd = sqrt((sd_aposymbiotic^2 + sd_symbiotic^2)/2),
-    pooled_se = pooled_sd/sqrt(n_aposymbiotic + n_symbiotic))%>% #I will used the studies pooled se as part of the measurement-error model in BRMS, rather than using hedge's G
+    pooled_se = pooled_sd/sqrt(n_aposymbiotic + n_symbiotic)) %>% #I will used the studies pooled se as part of the measurement-error model in BRMS, rather than using hedge's G
+  #hedgesG = (mean_aposymbiotic - mean_symbiotic)/sqrt((n_aposymbiotic-1)*sd_aposymbiotic)
+  mutate(treatment_label = paste(study_number, experiment_id, treatment_id, sep = "-")) %>%
   mutate(experiment_label = paste(study_number, experiment_id, sep = "-"))
->>>>>>> 3292921314a9e0291a6528e155b7af2296ad4f48
 
 
 # plotting prelim data
@@ -95,12 +79,7 @@ ggplot(effects_df) +
 # Testing out simpler models
 fit <- lm(data = effects_df, formula = RII ~ 0 + metric_category)
 fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category+ (1|study_number))
-<<<<<<< HEAD
-fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|study_number) + (1|experiment_id))
-fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|treatment_label))
-=======
 fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|study_number) + (1|study_number:experiment_id) )
->>>>>>> 3292921314a9e0291a6528e155b7af2296ad4f48
 
 summary(fit)
 
@@ -213,18 +192,12 @@ effects_filtered <- ef
 fit <- brm(formula = RII|se(pooled_se) ~ 0 + metric_category + (1|study_number) + (1|study_number:experiment_id),
            data = effects_df, 
            family = "gaussian",
-<<<<<<< HEAD
-           prior = c(set_prior("normal(0,5)", class = "b")))
-            iter = mcmc_pars$iter
-           chains = mcmc_pars$chains
-           warmup = mcmc_pars$warmup
-=======
            prior = c(set_prior("normal(0,1)", class = "b"),
                      set_prior("student_t(3, 0, 2.5)", class = "sd")),
             iter = mcmc_pars$iter,
            chains = mcmc_pars$chains,
            warmup = mcmc_pars$warmup)
->>>>>>> 3292921314a9e0291a6528e155b7af2296ad4f48
+
 summary(fit)
 
 
