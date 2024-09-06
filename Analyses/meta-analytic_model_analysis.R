@@ -30,8 +30,10 @@ path <- joshpath
 
 raw_effects_df <- read_csv(file = paste0(path,("Microbial Effects Literature Search(Effect_sizes).csv"))) %>% 
   filter(!is.na(mean_symbiotic)) %>% 
-  mutate(mean_symbiotic = as.numeric(mean_symbiotic),
-         mean_aposymbiotic = as.numeric(mean_aposymbiotic)) 
+  mutate(across(c(mean_aposymbiotic, mean_symbiotic,
+                sd_aposymbiotic, sd_symbiotic,
+                se_aposymbiotic, se_symbiotic,
+                n_aposymbiotic, n_symbiotic), as.numeric))
   # separate_wider_delim(symbiont_species, delim = " ", names = c("symbiont_genus"), too_many = "align_start")
 
 length(unique(raw_effects_df$study_number))
@@ -43,7 +45,9 @@ length(unique(raw_effects_df$study_number))
 effects_df <- raw_effects_df %>% 
   mutate(
     RII  = (mean_symbiotic - mean_aposymbiotic)/(mean_aposymbiotic + mean_symbiotic),
-    cohensD = ( mean_symbiotic-mean_aposymbiotic)/sqrt((sd_aposymbiotic^2 + sd_symbiotic^2)/2)) %>% #hedgesG = (mean_aposymbiotic - mean_symbiotic)/sqrt((n_aposymbiotic-1)*sd_aposymbiotic)
+    cohensD = ( mean_symbiotic-mean_aposymbiotic)/sqrt((sd_aposymbiotic^2 + sd_symbiotic^2)/2),
+    pooled_sd = sqrt((sd_aposymbiotic^2 + sd_symbiotic^2)/2),
+    pooled_se = pooled_sd/sqrt(n_aposymbiotic + n_symbiotic))%>% #I will used the studies pooled se as part of the measurement-error model in BRMS, rather than using hedge's G
   mutate(experiment_label = paste(study_number, experiment_id, sep = "-"))
 
 
@@ -55,7 +59,7 @@ ggplot(effects_df) +
 
 
 ggplot(effects_df) +
-  geom_histogram(aes(x = cohensD))+facet_wrap(~lifestage_description, scales = "free")
+  geom_histogram(aes(x = cohensD))+facet_wrap(~metric_category, scales = "free")
 
 
 
@@ -65,8 +69,8 @@ ggplot(effects_df) +
 
 # Testing out simpler models
 fit <- lm(data = effects_df, formula = RII ~ 0 + metric_category)
-fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category+ (1|study_number)  )
-fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|study_number) + (1|experiment_id) )
+fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category+ (1|study_number))
+fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|study_number) + (1|study_number:experiment_id) )
 
 summary(fit)
 
@@ -74,6 +78,7 @@ summary(fit)
 # Getting predictions from the model
 
 prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category),
+                              study_number = NA,
                               study_number = NA)
 
 preds <- predict(fit, newdat = prediction_df, se.fit = TRUE, re.form =  NA)
@@ -89,38 +94,60 @@ ggplot(data = prediction_df)+
   geom_linerange(aes(x = metric_category, ymin = lwr, ymax = upr)) + theme_bw()
 
 
+# Fitting a model across life stages
+fit <- lm(data = effects_df, formula = RII ~ 0 + lifestage_description)
+fit <- lmer(data = effects_df, formula = RII ~ 0 + lifestage_description+ (1|study_number))
+fit <- lmer(data = effects_df, formula = RII ~ 0 + lifestage_description + (1|study_number) + (1|study_number:experiment_id) )
+
+summary(fit)
+
+
+# Getting predictions from the model
+
+prediction_df <- expand.grid( lifestage_description = unique(effects_df$lifestage_description),
+                              study_number = NA,
+                              experiment_id = NA)
+
+preds <- predict(fit, newdat = prediction_df, se.fit = TRUE, re.form =  NA)
+
+prediction_df <- bind_cols(prediction_df, preds) %>% 
+  mutate(upr = fit + 1.96*se.fit,
+         lwr = fit - 1.96*se.fit)
+
+
+ggplot(data = prediction_df)+
+  geom_jitter(data = effects_df, aes( x= lifestage_description, y = RII), color = "blue", width = .1, alpha = .2)+
+  geom_point(aes(x = lifestage_description, y = fit), size = 3, alpha = .6) +
+  geom_linerange(aes(x = lifestage_description, ymin = lwr, ymax = upr)) + theme_bw()
+
 
   
   # with Cohens D
 effects_df_filtered <- effects_df %>% filter(!is.na(cohensD))
-  fit <- lm(data = effects_df_filtered, formula = cohensD ~ lifestage_description)
-  summary(fit)
+fit <- lmer(data = effects_df_filtered, formula = cohensD ~ 0 + metric_category + (1|study_number) + (1|study_number:experiment_id) )
+summary(fit)
   
   
   # Getting predictions from the model
   
-  prediction_df <- expand.grid( lifestage_description = unique(effects_df_filtered$lifestage_description))
-  
-  preds <- predict(fit, newdata = prediction_df, type = "response", se.fit = TRUE)
-  
+prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category),
+                              study_number = NA,
+                              experiment_id = NA)  
+
+preds <- predict(fit, newdat = prediction_df, se.fit = TRUE, re.form =  NA)
+
   prediction_df <- bind_cols(prediction_df, preds) %>% 
     mutate(upr = fit + 1.96*se.fit,
            lwr = fit - 1.96*se.fit)
   
   ggplot(data = prediction_df)+
-    geom_jitter(data = effects_df_filtered, aes( x= lifestage_description, y = cohensD), color = "blue", width = .1, alpha = .2)+
-    geom_point(aes(x = lifestage_description, y = fit), size = 3) +
-    geom_linerange(aes(x = lifestage_description, ymin = lwr, ymax = upr)) + theme_bw()
+    geom_jitter(data = effects_df_filtered, aes( x= metric_category, y = cohensD), color = "blue", width = .1, alpha = .2)+
+    geom_point(aes(x = metric_category, y = fit), size = 3) +
+    geom_linerange(aes(x = metric_category, ymin = lwr, ymax = upr)) + theme_bw()
   
   
   
 
-# Version with random effects is giving a weird error
-
-library(lme4)
-
-fit <- lmer(data = effects_df, formula = RII ~ metric_category + (1|host_id))
-summary(fit)
 
 
 
@@ -141,19 +168,34 @@ mcmc_pars <- list(
   chains = 3
 )
 
-fit <- brm(formula = RII ~ 0 + metric_category + (1|study_number),
+# Version that does not incorporate measurement error
+fit <- brm(formula = RII~ 0 + metric_category + (1|study_number) + (1|study_number:experiment_id),
            data = effects_df, 
            family = "gaussian",
-           prior = c(set_prior("normal(0,5)", class = "b")))
+           # prior = c(set_prior("student_t(0,5)", class = "b"),
+           #           set_prior("half-normal(0,1)", class = "sigma"),
+           #           set_prior("half-normal(0,1)", class = "sd")),
+           iter = mcmc_pars$iter,
+           chains = mcmc_pars$chains,
+           warmup = mcmc_pars$warmup)
+
+# version incorporating measurement error
+fit <- brm(formula = RII|se(pooled_se) ~ 0 + metric_category + (1|study_number) + (1|study_number:experiment_id),
+           data = effects_df, 
+           family = "gaussian",
+           # prior = c(set_prior("student_t(0,5)", class = "b"),
+           #           set_prior("half-normal(0,1)", class = "sigma"),
+           #           set_prior("half-normal(0,1)", class = "sd")),
             iter = mcmc_pars$iter,
            chains = mcmc_pars$chains,
            warmup = mcmc_pars$warmup)
 summary(fit)
 
 prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category),
-                              study_number = 31)
+                              study_number = NA,
+                              experiment_id = NA)
 
-preds <- fitted(fit, newdata = prediction_df, re_formula = NULL, allow_new_levels = TRUE)
+preds <- fitted(fit, newdata = prediction_df, re_formula = NA)
 
 prediction_df <- bind_cols(prediction_df, preds) 
 
