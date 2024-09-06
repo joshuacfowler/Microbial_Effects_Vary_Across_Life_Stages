@@ -169,41 +169,45 @@ mcmc_pars <- list(
 )
 
 # Version that does not incorporate measurement error
-fit <- brm(formula = RII~ 0 + metric_category + (1|study_number) + (1|study_number:experiment_id),
+fit <- brm(formula = RII~ 0 + metric_category + (1|study_number) + (1|experiment_label),
            data = effects_df, 
            family = "gaussian",
-           # prior = c(set_prior("student_t(0,5)", class = "b"),
-           #           set_prior("half-normal(0,1)", class = "sigma"),
-           #           set_prior("half-normal(0,1)", class = "sd")),
+           prior = c(set_prior("normal(0,1)", class = "b"),
+                     set_prior("student_t(3, 0, 2.5)", class = "sd")),
            iter = mcmc_pars$iter,
            chains = mcmc_pars$chains,
            warmup = mcmc_pars$warmup)
 
 # version incorporating measurement error
+effects_filtered <- ef
 fit <- brm(formula = RII|se(pooled_se) ~ 0 + metric_category + (1|study_number) + (1|study_number:experiment_id),
            data = effects_df, 
            family = "gaussian",
-           # prior = c(set_prior("student_t(0,5)", class = "b"),
-           #           set_prior("half-normal(0,1)", class = "sigma"),
-           #           set_prior("half-normal(0,1)", class = "sd")),
+           prior = c(set_prior("normal(0,1)", class = "b"),
+                     set_prior("student_t(3, 0, 2.5)", class = "sd")),
             iter = mcmc_pars$iter,
            chains = mcmc_pars$chains,
            warmup = mcmc_pars$warmup)
 summary(fit)
 
+
+get_prior(fit)
 prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category),
                               study_number = NA,
-                              experiment_id = NA)
+                              experiment_id = NA,
+                              pooled_se = 10000)
 
-preds <- fitted(fit, newdata = prediction_df, re_formula = NA)
+preds <- fitted(fit, newdata = prediction_df, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), re_formula = NA)
 
 prediction_df <- bind_cols(prediction_df, preds) 
 
 
 ggplot(data = prediction_df)+
-  geom_jitter(data = effects_df, aes( x= metric_category, y = RII), color = "blue", width = .1, alpha = .2)+
+  geom_jitter(data = effects_df, aes( x= metric_category, y = RII, color = metric_category), width = .1, alpha = .2)+
+  # geom_linerange(aes(x = metric_category, ymin = Q25, ymax = Q75), lwd = 1.2) + 
+  geom_linerange(aes(x = metric_category, ymin = Q2.5, ymax = Q97.5)) + 
   geom_point(aes(x = metric_category, y = Estimate), size = 3) +
-  geom_linerange(aes(x = metric_category, ymin = Q2.5, ymax = Q97.5)) + theme_bw()
+  theme_bw()
 
 
 
