@@ -60,7 +60,9 @@ effects_df <- raw_effects_df %>%
     pooled_se = pooled_sd/sqrt(n_aposymbiotic + n_symbiotic)) %>% #I will used the studies pooled se as part of the measurement-error model in BRMS, rather than using hedge's G
   #hedgesG = (mean_aposymbiotic - mean_symbiotic)/sqrt((n_aposymbiotic-1)*sd_aposymbiotic)
   mutate(treatment_label = paste(study_number, experiment_id, treatment_id, sep = "-")) %>%
-  mutate(experiment_label = paste(study_number, experiment_id, sep = "-"))
+  mutate(experiment_label = paste(study_number, experiment_id, sep = "-")) %>% 
+  mutate(symbiont_genus = word(symbiont_species, 1))
+
 
 
 # plotting prelim data
@@ -72,6 +74,7 @@ ggplot(effects_df) +
 
 
 
+
 #############################################################################
 ####### Fitting meta-analytic model  #######
 #############################################################################
@@ -80,9 +83,15 @@ ggplot(effects_df) +
 fit <- lm(data = effects_df, formula = RII ~ 0 + metric_category)
 fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category+ (1|study_number))
 fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|study_number) + (1|study_number:experiment_id) )
+# fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|study_number) + (1|experiment_label) + (1|treatment_label) + (1|species_label) +(metric_category|study_number))
 
 summary(fit)
 
+ggplot(effects_df) +
+  geom_tile(aes(x = study_number, y = experiment_label))
+
+ggplot(effects_df) +
+  geom_tile(aes(x = study_number, y = experiment_id))
 
 # Getting predictions from the model
 
