@@ -19,40 +19,55 @@ library(brms)
 #############################################################################
 ####### Reading in the data   #######
 #############################################################################
-# This data is stored in Teams; we have downloaded the most recent version to a local directory as of May 14, 2024
-joshpath <- c("~/Dropbox/Microbial_Effects_Metaanalysis/")
-# gwenpath <- 
-  
-  
-path <- joshpath
-# path <- gwenpath
+# This data is stored in Teams; we have downloaded the most recent version to a local directory as of Sep 6, 2024
 
 
-raw_effects_df <- read_csv(file = paste0(path,("Microbial Effects Literature Search(Effect_sizes).csv"))) %>% 
+# joshpath <- c("~/Dropbox/Microbial_Effects_Metaanalysis/")
+
+
+# gwen wd
+setwd("~/Desktop/afkhami_lab/meta_analysis/R/raw_data")
+gwenpath <- c("./")
+  
+  
+# path <- joshpath
+path <- gwenpath
+
+
+raw_effects_df <- read_csv(file = paste0(path,("20240906_effect_sizes.csv"))) %>% 
   filter(!is.na(mean_symbiotic)) %>% 
   mutate(mean_symbiotic = as.numeric(mean_symbiotic),
-         mean_aposymbiotic = as.numeric(mean_aposymbiotic)) 
+         mean_aposymbiotic = as.numeric(mean_aposymbiotic),
+         n_symbiotic = as.numeric(n_symbiotic),
+         n_aposymbiotic = as.numeric(n_aposymbiotic)
+         )
   # separate_wider_delim(symbiont_species, delim = " ", names = c("symbiont_genus"), too_many = "align_start")
 
+
+# find out how many distinct studies we have extracted data from
 length(unique(raw_effects_df$study_number))
 
 
-
-# Calculating effects sizes
-
+# calculate effects sizes and add to the data frame
+# also calculate SD and SE where needed
+# also create a new column to combine study_number and experiment_id and treatment_id
 effects_df <- raw_effects_df %>% 
   mutate(
     RII  = (mean_symbiotic - mean_aposymbiotic)/(mean_aposymbiotic + mean_symbiotic),
-    cohensD = ( mean_symbiotic-mean_aposymbiotic)/sqrt((sd_aposymbiotic^2 + sd_symbiotic^2)/2)) %>% #hedgesG = (mean_aposymbiotic - mean_symbiotic)/sqrt((n_aposymbiotic-1)*sd_aposymbiotic)
-  mutate(experiment_label = paste(study_number, experiment_id, sep = "-"))
+    cohensD = (mean_symbiotic-mean_aposymbiotic)/sqrt((sd_aposymbiotic^2 + sd_symbiotic^2)/2)
+    ) %>% #hedgesG = (mean_aposymbiotic - mean_symbiotic)/sqrt((n_aposymbiotic-1)*sd_aposymbiotic)
+  mutate(
+    calc_sd_symbiotic = case_when((is.na(sd_symbiotic)) & (!is.na(se_symbiotic)) & (!is.na(n_symbiotic)) ~ (se_symbiotic*(sqrt(n_symbiotic))), TRUE ~ NA),
+    calc_sd_aposymbiotic = case_when((is.na(sd_aposymbiotic)) & (!is.na(se_aposymbiotic)) & (!is.na(n_aposymbiotic)) ~ (se_aposymbiotic*(sqrt(n_aposymbiotic))), TRUE ~ NA),
+    calc_se_symbiotic = case_when((is.na(se_symbiotic)) & (!is.na(sd_symbiotic)) & (!is.na(n_symbiotic)) ~ (sd_symbiotic/(sqrt(n_symbiotic))), TRUE ~ NA),
+    calc_se_aposymbiotic = case_when((is.na(se_aposymbiotic)) & (!is.na(sd_aposymbiotic)) & (!is.na(n_aposymbiotic)) ~ (sd_aposymbiotic/(sqrt(n_aposymbiotic))), TRUE ~ NA)
+  ) %>%
+  mutate(treatment_label = paste(study_number, experiment_id, treatment_id, sep = "-"))
 
 
+# plotting prelim data
 ggplot(effects_df) +
   geom_histogram(aes(x = RII))+facet_wrap(~metric_category, scales = "free")
-
-
-
-
 
 ggplot(effects_df) +
   geom_histogram(aes(x = cohensD))+facet_wrap(~lifestage_description, scales = "free")
@@ -65,8 +80,9 @@ ggplot(effects_df) +
 
 # Testing out simpler models
 fit <- lm(data = effects_df, formula = RII ~ 0 + metric_category)
-fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category+ (1|study_number)  )
-fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|study_number) + (1|experiment_id) )
+fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category+ (1|study_number))
+fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|study_number) + (1|experiment_id))
+fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|treatment_label))
 
 summary(fit)
 
@@ -145,9 +161,9 @@ fit <- brm(formula = RII ~ 0 + metric_category + (1|study_number),
            data = effects_df, 
            family = "gaussian",
            prior = c(set_prior("normal(0,5)", class = "b")))
-            iter = mcmc_pars$iter,
-           chains = mcmc_pars$chains,
-           warmup = mcmc_pars$warmup)
+            iter = mcmc_pars$iter
+           chains = mcmc_pars$chains
+           warmup = mcmc_pars$warmup
 summary(fit)
 
 prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category),
