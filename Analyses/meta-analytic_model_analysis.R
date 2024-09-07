@@ -22,19 +22,19 @@ library(brms)
 # This data is stored in Teams; we have downloaded the most recent version to a local directory as of Sep 6, 2024
 
 
-# joshpath <- c("~/Dropbox/Microbial_Effects_Metaanalysis/")
+joshpath <- c("~/Dropbox/Microbial_Effects_Metaanalysis/")
 
 
 # gwen wd
-setwd("~/Desktop/afkhami_lab/meta_analysis/R/raw_data")
+# setwd("~/Desktop/afkhami_lab/meta_analysis/R/raw_data")
 gwenpath <- c("./")
   
   
-# path <- joshpath
-path <- gwenpath
+path <- joshpath
+# path <- gwenpath
 
 
-raw_effects_df <- read_csv(file = paste0(path,("20240906_effect_sizes.csv"))) %>% 
+raw_effects_df <- read_csv(file = paste0(path,("Microbial Effects Literature Search(Effect_sizes).csv"))) %>% 
   filter(!is.na(mean_symbiotic)) %>% 
   mutate(across(mean_symbiotic:n_aposymbiotic, as.numeric))
   # separate_wider_delim(symbiont_species, delim = " ", names = c("symbiont_genus"), too_many = "align_start")
@@ -61,7 +61,9 @@ effects_df <- raw_effects_df %>%
   #hedgesG = (mean_aposymbiotic - mean_symbiotic)/sqrt((n_aposymbiotic-1)*sd_aposymbiotic)
   mutate(treatment_label = paste(study_number, experiment_id, treatment_id, sep = "-")) %>%
   mutate(experiment_label = paste(study_number, experiment_id, sep = "-")) %>% 
-  mutate(symbiont_genus = word(symbiont_species, 1))
+  mutate(symbiont_genus = word(symbiont_species, 1)) 
+
+  
 
 
 
@@ -83,20 +85,17 @@ ggplot(effects_df) +
 fit <- lm(data = effects_df, formula = RII ~ 0 + metric_category)
 fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category+ (1|study_number))
 fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|study_number) + (1|study_number:experiment_id) )
+fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|study_number) + (1|experiment_label) )
+
 # fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|study_number) + (1|experiment_label) + (1|treatment_label) + (1|species_label) +(metric_category|study_number))
 
 summary(fit)
 
-ggplot(effects_df) +
-  geom_tile(aes(x = study_number, y = experiment_label))
 
-ggplot(effects_df) +
-  geom_tile(aes(x = study_number, y = experiment_id))
 
 # Getting predictions from the model
 
 prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category),
-                              study_number = NA,
                               study_number = NA)
 
 preds <- predict(fit, newdat = prediction_df, se.fit = TRUE, re.form =  NA)
@@ -196,18 +195,35 @@ fit <- brm(formula = RII~ 0 + metric_category + (1|study_number) + (1|experiment
            chains = mcmc_pars$chains,
            warmup = mcmc_pars$warmup)
 
-# version incorporating measurement error
-effects_filtered <- ef
-fit <- brm(formula = RII|se(pooled_se) ~ 0 + metric_category + (1|study_number) + (1|study_number:experiment_id),
-           data = effects_df, 
-           family = "gaussian",
+
+# Version rescaling the RII data and fitting to a beta distribution
+rescale <- function(x){(x+1)/2}
+unscale <- function(x){(x*2)-1}
+
+effects_rescaled = effects_df %>% 
+  mutate(RII_rescaled = rescale(RII))
+fit <- brm(formula = RII_rescaled~ 0 + metric_category + (1|study_number) + (1|experiment_label),
+           data = effects_rescaled, 
+           family = "zero_one_inflated_beta",
            prior = c(set_prior("normal(0,1)", class = "b"),
                      set_prior("student_t(3, 0, 2.5)", class = "sd")),
-            iter = mcmc_pars$iter,
+           iter = mcmc_pars$iter,
            chains = mcmc_pars$chains,
            warmup = mcmc_pars$warmup)
 
-summary(fit)
+
+
+# version incorporating measurement error
+# fit <- brm(formula = RII|se(pooled_se) ~ 0 + metric_category + (1|study_number) + (1|study_number:experiment_id),
+#            data = effects_df, 
+#            family = "gaussian",
+#            prior = c(set_prior("normal(0,1)", class = "b"),
+#                      set_prior("student_t(3, 0, 2.5)", class = "sd")),
+#             iter = mcmc_pars$iter,
+#            chains = mcmc_pars$chains,
+#            warmup = mcmc_pars$warmup)
+# 
+# summary(fit)
 
 
 get_prior(fit)
@@ -218,7 +234,8 @@ prediction_df <- expand.grid( metric_category = unique(effects_df$metric_categor
 
 preds <- fitted(fit, newdata = prediction_df, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), re_formula = NA)
 
-prediction_df <- bind_cols(prediction_df, preds) 
+prediction_df <- bind_cols(prediction_df, preds) %>% 
+  mutate(across(Estimate:Q97.5,~unscale(.)))
 
 
 ggplot(data = prediction_df)+
