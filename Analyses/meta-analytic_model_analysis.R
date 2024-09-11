@@ -56,8 +56,8 @@ variance_RII <- function(Bw, Bo, SDw, SDo, Nw, No){
 }
 
 # calculate effects sizes and add to the data frame
-# also calculate SD and SE where needed
-# also create a new column to combine study_number and experiment_id and treatment_id
+# clean up the data frame
+invalid_genera <- c("AMF","NAB", "Endophytic", "DAXY0016C","DYXY033","DYSH004","DYXY023","DYXY013C","DYXY003","DYXY004","DYXY001","DYXYY2","DYXYXY1","DYXY002","DYXY111","DYXY112")
 effects_df <- raw_effects_df %>% 
   mutate(
     calc_sd_symbiotic = case_when((is.na(sd_symbiotic)) & (!is.na(se_symbiotic)) & (!is.na(n_symbiotic)) ~ (se_symbiotic*(sqrt(n_symbiotic))), TRUE ~ sd_symbiotic),
@@ -78,11 +78,11 @@ effects_df <- raw_effects_df %>%
   mutate(experiment_label = paste(study_number, experiment_id, sep = "-")) %>% 
   mutate(symbiont_genus = word(symbiont_species, 1)) %>% 
   mutate(symbiont_genus_clean = 
-           case_when((symbiont_genus == "AMF") | (symbiont_genus == "NAB") ~ NA,
-                     (symbiont_genus == "E.") | (symbiont_genus == "Epichloe\xa8") | (symbiont_genus == "Epichlo\xeb") ~ "Epichloe",
+           case_when((symbiont_genus == "E.") | (symbiont_genus == "Epichloe\xa8") | (symbiont_genus == "Epichlo\xeb") ~ "Epichloe",
+                     (symbiont_genus %in% invalid_genera) ~ NA,
                      TRUE ~ symbiont_genus))
 
-?startsWith
+#
 print(unique(effects_df$symbiont_genus_clean))
 
 
