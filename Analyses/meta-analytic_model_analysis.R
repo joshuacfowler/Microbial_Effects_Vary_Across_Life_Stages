@@ -76,13 +76,14 @@ effects_df <- raw_effects_df %>%
   #hedgesG = (mean_aposymbiotic - mean_symbiotic)/sqrt((n_aposymbiotic-1)*sd_aposymbiotic)
   mutate(treatment_label = paste(study_number, experiment_id, treatment_id, sep = "-")) %>%
   mutate(experiment_label = paste(study_number, experiment_id, sep = "-")) %>% 
-  mutate(symbiont_genus = word(symbiont_species, 1)) 
+  mutate(symbiont_genus = word(symbiont_species, 1)) %>% 
+  mutate(symbiont_genus_clean = 
+           case_when((symbiont_genus == "AMF") | (symbiont_genus == "NAB") ~ NA,
+                     (symbiont_genus == "E.") | (symbiont_genus == "Epichloe\xa8") | (symbiont_genus == "Epichlo\xeb") ~ "Epichloe",
+                     TRUE ~ symbiont_genus))
 
-# clean up the genus column
-genus_data = c(unique(effects_df$symbiont_genus))
-which(effects_df$symbiont_genus == "E.", arr.ind = TRUE)
-
-
+?startsWith
+print(unique(effects_df$symbiont_genus_clean))
 
 
 # plotting prelim data
