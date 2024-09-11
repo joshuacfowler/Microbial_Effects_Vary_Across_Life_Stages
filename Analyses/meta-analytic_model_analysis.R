@@ -15,26 +15,28 @@ library(lme4)
 library(rstan)
 library(brms)
 
+library(rotl)
+
 
 #############################################################################
 ####### Reading in the data   #######
 #############################################################################
-# This data is stored in Teams; we have downloaded the most recent version to a local directory as of Sep 6, 2024
+# This data is stored in Teams; we have downloaded the most recent version to a local directory as of Sep 10, 2024
 
 
-joshpath <- c("~/Dropbox/Microbial_Effects_Metaanalysis/")
+# joshpath <- c("~/Dropbox/Microbial_Effects_Metaanalysis/")
 
 
 # gwen wd
-# setwd("~/Desktop/afkhami_lab/meta_analysis/R/raw_data")
+setwd("~/Desktop/afkhami_lab/meta_analysis/R/raw_data")
 gwenpath <- c("./")
   
   
-path <- joshpath
-# path <- gwenpath
+# path <- joshpath
+path <- gwenpath
 
 
-raw_effects_df <- read_csv(file = paste0(path,("Microbial Effects Literature Search(Effect_sizes).csv"))) %>% 
+raw_effects_df <- read_csv(file = paste0(path,("20240910_effect_sizes.csv"))) %>% 
   filter(!is.na(mean_symbiotic)) %>% 
   mutate(across(mean_symbiotic:n_aposymbiotic, as.numeric))
   # separate_wider_delim(symbiont_species, delim = " ", names = c("symbiont_genus"), too_many = "align_start")
@@ -76,7 +78,10 @@ effects_df <- raw_effects_df %>%
   mutate(experiment_label = paste(study_number, experiment_id, sep = "-")) %>% 
   mutate(symbiont_genus = word(symbiont_species, 1)) 
 
-  
+# clean up the genus column
+genus_data = c(unique(effects_df$symbiont_genus))
+which(effects_df$symbiont_genus == "E.", arr.ind = TRUE)
+
 
 
 
