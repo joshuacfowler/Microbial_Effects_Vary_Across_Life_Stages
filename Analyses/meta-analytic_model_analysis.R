@@ -214,8 +214,8 @@ fit <- brm(formula = lRR~ 0 + metric_category + (1|study_number) + (1|experiment
 # version incorporating measurement error
 effects_df_filtered <- effects_df %>% filter(!is.na(sd_RII))
 
-fit <- brm(formula = RII|se(sd_RII) ~ 0 + metric_category + (1|study_number) + (1|study_number:experiment_id),
-           data = effects_df,
+fit <- brm(formula = RII|se(sd_RII, sigma = TRUE) ~ 0 + metric_category + (1|study_number) + (1|study_number:experiment_id),
+           data = effects_df_filtered,
            family = "gaussian",
            prior = c(set_prior("normal(0,1)", class = "b"),
                      set_prior("student_t(3, 0, 2.5)", class = "sd")),
@@ -274,7 +274,7 @@ get_prior(fit)
 prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category),
                               study_number = NA,
                               experiment_id = NA,
-                              pooled_se = 10000)
+                              sd_RII = 0)
 
 preds <- fitted(fit, newdata = prediction_df, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), re_formula = NA)
 
@@ -283,7 +283,7 @@ prediction_df <- bind_cols(prediction_df, preds) #%>%
 
 
 ggplot(data = prediction_df)+
-  geom_jitter(data = effects_df, aes( x= metric_category, y = lRR, color = metric_category), width = .1, alpha = .2)+
+  geom_jitter(data = effects_df_filtered, aes( x= metric_category, y = RII, color = metric_category), width = .1, alpha = .2)+
   # geom_linerange(aes(x = metric_category, ymin = Q25, ymax = Q75), lwd = 1.2) + 
   geom_linerange(aes(x = metric_category, ymin = Q2.5, ymax = Q97.5)) + 
   geom_point(aes(x = metric_category, y = Estimate), size = 3) +
