@@ -42,6 +42,16 @@ raw_effects_df <- read_csv(file = paste0(path,("Microbial Effects Literature Sea
 # find out how many distinct studies we have extracted data from
 length(unique(raw_effects_df$study_number))
 
+variance_RII <- function(Bw, Bo, SDw, SDo, Nw, No){
+  # calculating the variance of RII following formula from from Armas et al. 2004 supplement
+  VARw <- (SDw^2)
+  VARo <- (SDo^2)
+  first_term = ((VARw/Nw) + (VARo/No))/((Bw+Bo)^2)
+  second_term = (Bw-Bo)^2/(Bw+Bo)^2
+  rho = ((VARw/Nw)-(VARo/No))/((VARw/Nw)+(VARo/No))
+  V_rii = first_term*(1+second_term - ((2*rho*(Bw-Bo))/(Bw+Bo)))
+  return(V_rii)
+}
 
 # calculate effects sizes and add to the data frame
 # also calculate SD and SE where needed
@@ -55,8 +65,10 @@ effects_df <- raw_effects_df %>%
   ) %>%
   mutate(
     RII  = (mean_symbiotic - mean_aposymbiotic)/(mean_aposymbiotic + mean_symbiotic),
-    cohensD = (mean_symbiotic - mean_aposymbiotic)/sqrt((sd_aposymbiotic^2 + sd_symbiotic^2)/2),
+    cohensD = (mean_symbiotic - mean_aposymbiotic)/sqrt((calc_sd_aposymbiotic^2 + calc_sd_symbiotic^2)/2),
     lRR = log(mean_symbiotic/mean_aposymbiotic),
+    var_RII =variance_RII(Bw = mean_symbiotic, Bo = mean_aposymbiotic, SDw = calc_sd_symbiotic, SDo = calc_sd_aposymbiotic, Nw = n_symbiotic, No = n_aposymbiotic),
+    sd_RII = sqrt(var_RII),
     pooled_sd = sqrt((sd_aposymbiotic^2 + sd_symbiotic^2)/2),
     pooled_se = pooled_sd/sqrt(n_aposymbiotic + n_symbiotic)) %>% #I will used the studies pooled se as part of the measurement-error model in BRMS, rather than using hedge's G
   #hedgesG = (mean_aposymbiotic - mean_symbiotic)/sqrt((n_aposymbiotic-1)*sd_aposymbiotic)
@@ -189,7 +201,7 @@ mcmc_pars <- list(
 )
 
 # Version that does not incorporate measurement error
-fit <- brm(formula = RII~ 0 + metric_category + (1|study_number) + (1|experiment_label),
+fit <- brm(formula = lRR~ 0 + metric_category + (1|study_number) + (1|experiment_label),
            data = effects_df, 
            family = "gaussian",
            prior = c(set_prior("normal(0,1)", class = "b"),
@@ -197,6 +209,23 @@ fit <- brm(formula = RII~ 0 + metric_category + (1|study_number) + (1|experiment
            iter = mcmc_pars$iter,
            chains = mcmc_pars$chains,
            warmup = mcmc_pars$warmup)
+
+
+# version incorporating measurement error
+effects_df_filtered <- effects_df %>% filter(!is.na(sd_RII))
+
+fit <- brm(formula = RII|se(sd_RII) ~ 0 + metric_category + (1|study_number) + (1|study_number:experiment_id),
+           data = effects_df,
+           family = "gaussian",
+           prior = c(set_prior("normal(0,1)", class = "b"),
+                     set_prior("student_t(3, 0, 2.5)", class = "sd")),
+           iter = mcmc_pars$iter,
+           chains = mcmc_pars$chains,
+           warmup = mcmc_pars$warmup)
+
+summary(fit)
+
+
 
 
 # Version rescaling the RII data and fitting to a beta distribution
@@ -254,7 +283,7 @@ prediction_df <- bind_cols(prediction_df, preds) #%>%
 
 
 ggplot(data = prediction_df)+
-  geom_jitter(data = effects_df, aes( x= metric_category, y = RII, color = metric_category), width = .1, alpha = .2)+
+  geom_jitter(data = effects_df, aes( x= metric_category, y = lRR, color = metric_category), width = .1, alpha = .2)+
   # geom_linerange(aes(x = metric_category, ymin = Q25, ymax = Q75), lwd = 1.2) + 
   geom_linerange(aes(x = metric_category, ymin = Q2.5, ymax = Q97.5)) + 
   geom_point(aes(x = metric_category, y = Estimate), size = 3) +
