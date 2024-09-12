@@ -80,10 +80,18 @@ effects_df <- raw_effects_df %>%
   mutate(symbiont_genus_clean = 
            case_when((symbiont_genus == "E.") | (symbiont_genus == "Epichloe\xa8") | (symbiont_genus == "Epichlo\xeb") ~ "Epichloe",
                      (symbiont_genus %in% invalid_genera) ~ NA,
-                     TRUE ~ symbiont_genus))
+                     TRUE ~ symbiont_genus)) %>%
+  mutate(host_genus = word(host_species, 1))
 
-#
+
+
+# trying out the rotl package
+print(unique(effects_df$host_genus))
 print(unique(effects_df$symbiont_genus_clean))
+host_genera = array(unique(effects_df$host_genus))
+host_genera_names = tnrs_match_names(host_genera)
+mult_matches = subset(host_genera_names, number_matches > 1)
+inspect(host_genera_names, taxon_name = "prunella")
 
 
 # plotting prelim data
