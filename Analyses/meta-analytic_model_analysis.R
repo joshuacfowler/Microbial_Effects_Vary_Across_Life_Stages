@@ -21,7 +21,7 @@ library(rotl)
 #############################################################################
 ####### Reading in the data   #######
 #############################################################################
-# This data is stored in Teams; we have downloaded the most recent version to a local directory as of Sep 10, 2024
+# This data is stored in Teams; we have downloaded the most recent version to a local directory as of Sep 11, 2024
 
 
 # joshpath <- c("~/Dropbox/Microbial_Effects_Metaanalysis/")
@@ -36,7 +36,7 @@ gwenpath <- c("./")
 path <- gwenpath
 
 
-raw_effects_df <- read_csv(file = paste0(path,("20240910_effect_sizes.csv"))) %>% 
+raw_effects_df <- read_csv(file = paste0(path,("20240911_effect_sizes.csv"))) %>% 
   filter(!is.na(mean_symbiotic)) %>% 
   mutate(across(mean_symbiotic:n_aposymbiotic, as.numeric))
   # separate_wider_delim(symbiont_species, delim = " ", names = c("symbiont_genus"), too_many = "align_start")
@@ -83,13 +83,15 @@ effects_df <- raw_effects_df %>%
                      TRUE ~ symbiont_genus)) %>%
   mutate(host_genus = word(host_species, 1))
 
-
+print(unique(effects_df$lifestage_description))
 
 # trying out the rotl package
 print(unique(effects_df$host_genus))
 print(unique(effects_df$symbiont_genus_clean))
+
 host_genera = array(unique(effects_df$host_genus))
 host_genera_names = tnrs_match_names(host_genera)
+## got the warning message "Commercial are not matched" which I couldn't find any info on in the rotl documentation, stack overflow, etc.
 mult_matches = subset(host_genera_names, number_matches > 1)
 inspect(host_genera_names, taxon_name = "prunella")
 
