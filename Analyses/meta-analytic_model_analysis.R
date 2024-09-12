@@ -6,7 +6,6 @@
 library(renv)
 # renv::init()
 
-
 library(tidyverse)
 
 library(effsize) 
@@ -21,7 +20,7 @@ library(rotl)
 #############################################################################
 ####### Reading in the data   #######
 #############################################################################
-# This data is stored in Teams; we have downloaded the most recent version to a local directory as of Sep 11, 2024
+# This data is stored in Teams; we have downloaded the most recent version to a local directory as of Sep 12, 2024
 
 
 # joshpath <- c("~/Dropbox/Microbial_Effects_Metaanalysis/")
@@ -36,7 +35,7 @@ gwenpath <- c("./")
 path <- gwenpath
 
 
-raw_effects_df <- read_csv(file = paste0(path,("20240911_effect_sizes.csv"))) %>% 
+raw_effects_df <- read_csv(file = paste0(path,("20240912_effect_sizes.csv"))) %>% 
   filter(!is.na(mean_symbiotic)) %>% 
   mutate(across(mean_symbiotic:n_aposymbiotic, as.numeric))
   # separate_wider_delim(symbiont_species, delim = " ", names = c("symbiont_genus"), too_many = "align_start")
@@ -84,30 +83,47 @@ effects_df <- raw_effects_df %>%
            case_when((symbiont_genus == "E.") | (symbiont_genus == "Epichloe\xa8") | (symbiont_genus == "Epichlo\xeb") ~ "Epichloe",
                      (symbiont_genus %in% invalid_genera) ~ NA,
                      TRUE ~ symbiont_genus)) %>%
-  mutate(host_genus = case_when(startsWith(host_species, "Commercial") ~ NA, TRUE ~ word(host_species, 1)))
+  mutate(host_genus = word(host_species, 1))
 
 
-######## trying out the rotl package
+
+
+###################
+######## trying out the rotl package #########
+###################
 print(unique(effects_df$host_genus))
 print(unique(effects_df$symbiont_genus_clean))
 
-host_genera = array(unique(effects_df$host_genus))
-host_genera = host_genera[!is.na(host_genera), drop = FALSE]
 # eventually the array will need to include all entries so we can weight the number of observations for each genus
 # but for now i am just doing the unique ones since it's easier to learn the package that way
+host_genera = array(unique(effects_df$host_genus))
+host_genera = host_genera[!is.na(host_genera), drop = FALSE]
 
-host_genera = host_genera[host_genera != "Schedonorus"]
 # having issues with schedonorus. it has flag "barren" which OTL says means there are only higher taxa at and below this node, no species or unranked tips
+host_genera = host_genera[host_genera != "Schedonorus"]
 
 host_genera_names = tnrs_match_names(host_genera)
 mult_matches = subset(host_genera_names, number_matches > 1)
 inspect(host_genera_names, taxon_name = "prunella")
 
+taxon_map = structure(host_genera_names$search_string, names = host_genera_names$unique_name)
+taxon_map["Tolumnia (genus in kingdom Archaeplastida)"]
+
 test_tree = tol_induced_subtree(ott_ids = host_genera_names$ott_id)
 plot(test_tree, show.tip.label = FALSE)
 
+test_tree2 = tol_induced_subtree(ott_id(host_genera_names)[is_in_tree(ott_id(host_genera_names))])
+plot(test_tree2, show.tip.label = FALSE)
 
-######### plotting prelim data
+otl_tips = strip_ott_ids(test_tree2$tip.label, remove_underscores = TRUE)
+test_tree2$tip.label = taxon_map[otl_tips]
+plot(test_tree2)
+
+
+
+###################
+######### plotting prelim data ########
+###################
 ggplot(effects_df) +
   geom_histogram(aes(x = RII))+facet_wrap(~metric_category, scales = "free")
 ggplot(effects_df) +
@@ -118,6 +134,10 @@ ggplot(effects_df) +
 
 ggplot(effects_df) +
   geom_histogram(aes(x = RII))+facet_wrap(~lifestage_general, scales = "free")
+
+# funnel plot
+plot(effects_df$RII, (1/sqrt(effects_df$var_RII)))
+
 
 
 
