@@ -76,27 +76,38 @@ effects_df <- raw_effects_df %>%
   #hedgesG = (mean_aposymbiotic - mean_symbiotic)/sqrt((n_aposymbiotic-1)*sd_aposymbiotic)
   mutate(treatment_label = paste(study_number, experiment_id, treatment_id, sep = "-")) %>%
   mutate(experiment_label = paste(study_number, experiment_id, sep = "-")) %>% 
+  mutate(lifestage_general = case_when(startsWith(lifestage_description, "juvenile") ~ "juvenile",
+                                       startsWith(lifestage_description, "embryo") ~ "embryo",
+                                       TRUE ~ lifestage_description)) %>% 
   mutate(symbiont_genus = word(symbiont_species, 1)) %>% 
   mutate(symbiont_genus_clean = 
            case_when((symbiont_genus == "E.") | (symbiont_genus == "Epichloe\xa8") | (symbiont_genus == "Epichlo\xeb") ~ "Epichloe",
                      (symbiont_genus %in% invalid_genera) ~ NA,
                      TRUE ~ symbiont_genus)) %>%
-  mutate(host_genus = word(host_species, 1))
+  mutate(host_genus = case_when(startsWith(host_species, "Commercial") ~ NA, TRUE ~ word(host_species, 1)))
 
-print(unique(effects_df$lifestage_description))
 
-# trying out the rotl package
+######## trying out the rotl package
 print(unique(effects_df$host_genus))
 print(unique(effects_df$symbiont_genus_clean))
 
 host_genera = array(unique(effects_df$host_genus))
+host_genera = host_genera[!is.na(host_genera), drop = FALSE]
+# eventually the array will need to include all entries so we can weight the number of observations for each genus
+# but for now i am just doing the unique ones since it's easier to learn the package that way
+
+host_genera = host_genera[host_genera != "Schedonorus"]
+# having issues with schedonorus. it has flag "barren" which OTL says means there are only higher taxa at and below this node, no species or unranked tips
+
 host_genera_names = tnrs_match_names(host_genera)
-## got the warning message "Commercial are not matched" which I couldn't find any info on in the rotl documentation, stack overflow, etc.
 mult_matches = subset(host_genera_names, number_matches > 1)
 inspect(host_genera_names, taxon_name = "prunella")
 
+test_tree = tol_induced_subtree(ott_ids = host_genera_names$ott_id)
+plot(test_tree, show.tip.label = FALSE)
 
-# plotting prelim data
+
+######### plotting prelim data
 ggplot(effects_df) +
   geom_histogram(aes(x = RII))+facet_wrap(~metric_category, scales = "free")
 ggplot(effects_df) +
@@ -105,6 +116,8 @@ ggplot(effects_df) +
 ggplot(effects_df) +
   geom_histogram(aes(x = cohensD))+facet_wrap(~metric_category, scales = "free")
 
+ggplot(effects_df) +
+  geom_histogram(aes(x = RII))+facet_wrap(~lifestage_general, scales = "free")
 
 
 
