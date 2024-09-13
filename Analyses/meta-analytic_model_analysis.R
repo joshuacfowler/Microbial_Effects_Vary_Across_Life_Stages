@@ -27,15 +27,14 @@ library(rotl)
 
 
 # gwen wd
-setwd("~/Desktop/afkhami_lab/meta_analysis/R/raw_data")
-gwenpath <- c("./")
+setwd("~/Desktop/afkhami_lab/meta_analysis/R")
   
   
 # path <- joshpath
-path <- gwenpath
 
 
-raw_effects_df <- read_csv(file = paste0(path,("20240912_effect_sizes.csv"))) %>% 
+# raw_effects_df <- read_csv(file = paste0(path,("20240912_effect_sizes.csv"))) %>% 
+raw_effects_df <- read.csv("./raw_data/20240912_effect_sizes.csv") %>% 
   filter(!is.na(mean_symbiotic)) %>% 
   mutate(across(mean_symbiotic:n_aposymbiotic, as.numeric))
   # separate_wider_delim(symbiont_species, delim = " ", names = c("symbiont_genus"), too_many = "align_start")
@@ -54,9 +53,9 @@ variance_RII <- function(Bw, Bo, SDw, SDo, Nw, No){
   return(V_rii)
 }
 
-# calculate effects sizes and add to the data frame
-# clean up the data frame
+# calculate effects sizes and add to the data frame, also clean up the data frame
 invalid_genera <- c("AMF","NAB", "Endophytic", "DAXY0016C","DYXY033","DYSH004","DYXY023","DYXY013C","DYXY003","DYXY004","DYXY001","DYXYY2","DYXYXY1","DYXY002","DYXY111","DYXY112")
+# will need to come back to the "genera" above and manually determine the correct genus. for now, we omit them from analysis
 effects_df <- raw_effects_df %>% 
   mutate(
     calc_sd_symbiotic = case_when((is.na(sd_symbiotic)) & (!is.na(se_symbiotic)) & (!is.na(n_symbiotic)) ~ (se_symbiotic*(sqrt(n_symbiotic))), TRUE ~ sd_symbiotic),
@@ -93,11 +92,7 @@ effects_df <- raw_effects_df %>%
 ######## trying out the rotl package #########
 ###################
 
-# eventually the array will need to include all entries so we can weight the number of observations for each genus
-# but for now i am just doing the unique ones since it's easier to learn the package that way
 host_genera = array(unique(effects_df$host_genus))
-host_genera = host_genera[!is.na(host_genera), drop = FALSE]
-
 # having issues with schedonorus. it has flag "barren" which OTL says means there are only higher taxa at and below this node, no species or unranked tips
 host_genera = host_genera[host_genera != "Schedonorus"]
 
@@ -117,6 +112,8 @@ plot(test_tree, show.tip.label = FALSE)
 test_tree2 = tol_induced_subtree(ott_id(host_genera_names)[is_in_tree(ott_id(host_genera_names))])
 plot(test_tree2, show.tip.label = FALSE)
 
+setdiff(test_tree$tip.label, test_tree2$tip.label)
+
 otl_tips2 = strip_ott_ids(test_tree2$tip.label, remove_underscores = TRUE)
 test_tree2$tip.label = taxon_map[otl_tips2]
 plot(test_tree2)
@@ -125,7 +122,7 @@ plot(test_tree2)
 # using rotl to check/filter host_species_clean column
 host_names = array(unique(effects_df$host_species_clean))
 # had to use the code below when making test_tree3 b/c Error: node_id 'ott3915043' was not found!list(ott3915043 = "pruned_ott_id")
-#host_names = host_names[!(host_names == "Populus euramericana")]
+# host_names = host_names[!(host_names == "Populus euramericana")]
 
 host_species_names = tnrs_match_names(host_names)
 
@@ -164,7 +161,7 @@ ggplot(effects_df) +
 ggplot(effects_df) +
   geom_histogram(aes(x = RII))+facet_wrap(~lifestage_general, scales = "free")
 
-# funnel plot
+# prelim funnel plot
 plot(effects_df$RII, (1/sqrt(effects_df$var_RII)))
 
 
@@ -176,13 +173,14 @@ plot(effects_df$RII, (1/sqrt(effects_df$var_RII)))
 
 # Testing out simpler models
 fit <- lm(data = effects_df, formula = RII ~ 0 + metric_category)
-fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category+ (1|study_number))
+fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|study_number))
 fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|study_number) + (1|study_number:experiment_id) )
 fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|study_number) + (1|experiment_label) )
 
 # fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|study_number) + (1|experiment_label) + (1|treatment_label) + (1|species_label) +(metric_category|study_number))
 
 summary(fit)
+summary(fit)$r.squared
 
 
 
