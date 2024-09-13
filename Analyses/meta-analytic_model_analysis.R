@@ -83,7 +83,8 @@ effects_df <- raw_effects_df %>%
            case_when((symbiont_genus == "E.") | (symbiont_genus == "Epichloe\xa8") | (symbiont_genus == "Epichlo\xeb") ~ "Epichloe",
                      (symbiont_genus %in% invalid_genera) ~ NA,
                      TRUE ~ symbiont_genus)) %>%
-  mutate(host_genus = word(host_species, 1))
+  mutate(host_genus = word(host_species, 1)) %>%
+  mutate(host_species_clean = paste(host_genus, word(host_species, 2), sep = " "))
 
 
 
@@ -91,8 +92,6 @@ effects_df <- raw_effects_df %>%
 ###################
 ######## trying out the rotl package #########
 ###################
-print(unique(effects_df$host_genus))
-print(unique(effects_df$symbiont_genus_clean))
 
 # eventually the array will need to include all entries so we can weight the number of observations for each genus
 # but for now i am just doing the unique ones since it's easier to learn the package that way
@@ -102,22 +101,52 @@ host_genera = host_genera[!is.na(host_genera), drop = FALSE]
 # having issues with schedonorus. it has flag "barren" which OTL says means there are only higher taxa at and below this node, no species or unranked tips
 host_genera = host_genera[host_genera != "Schedonorus"]
 
+# matching the names we have to the ott_ids in OTL
 host_genera_names = tnrs_match_names(host_genera)
 mult_matches = subset(host_genera_names, number_matches > 1)
 inspect(host_genera_names, taxon_name = "prunella")
 
+# making taxon map
 taxon_map = structure(host_genera_names$search_string, names = host_genera_names$unique_name)
 taxon_map["Tolumnia (genus in kingdom Archaeplastida)"]
 
+# testing some phylogeny building
 test_tree = tol_induced_subtree(ott_ids = host_genera_names$ott_id)
 plot(test_tree, show.tip.label = FALSE)
 
 test_tree2 = tol_induced_subtree(ott_id(host_genera_names)[is_in_tree(ott_id(host_genera_names))])
 plot(test_tree2, show.tip.label = FALSE)
 
-otl_tips = strip_ott_ids(test_tree2$tip.label, remove_underscores = TRUE)
-test_tree2$tip.label = taxon_map[otl_tips]
+otl_tips2 = strip_ott_ids(test_tree2$tip.label, remove_underscores = TRUE)
+test_tree2$tip.label = taxon_map[otl_tips2]
 plot(test_tree2)
+
+
+# using rotl to check/filter host_species_clean column
+host_names = array(unique(effects_df$host_species_clean))
+# had to use the code below when making test_tree3 b/c Error: node_id 'ott3915043' was not found!list(ott3915043 = "pruned_ott_id")
+#host_names = host_names[!(host_names == "Populus euramericana")]
+
+host_species_names = tnrs_match_names(host_names)
+
+find_mismatch = host_species_names %>% 
+  mutate(search_epithet = word(host_species_names$search_string, 2)) %>% 
+  mutate(otl_epithet = word(host_species_names$unique_name, 2)) %>% 
+  mutate(mismatch = case_when((search_epithet == otl_epithet) ~ NA, TRUE ~ search_epithet))
+which(!(is.na(find_mismatch$mismatch)))
+mismatch_rows = c(7,19,34,35,46,58)
+mismatches = find_mismatch[mismatch_rows, ]
+print(mismatches$search_string)
+# need to come back and check that ott_ids are correctly matched by looking at the synonyms for the species below & referencing the papers
+synonyms(host_species_names, taxon_name = "fragaria x")
+synonyms(host_species_names, taxon_name = "schedonorus arundinaceus")
+synonyms(host_species_names, taxon_name = "achnatherum sibiricum")
+synonyms(host_species_names, taxon_name = "andropogon gerardii")
+synonyms(host_species_names, taxon_name = "setaria glauca")
+synonyms(host_species_names, taxon_name = "populus euramericana")
+
+test_tree3 = tol_induced_subtree(ott_ids = host_species_names$ott_id)
+plot(test_tree3, show.tip.label = FALSE)
 
 
 
