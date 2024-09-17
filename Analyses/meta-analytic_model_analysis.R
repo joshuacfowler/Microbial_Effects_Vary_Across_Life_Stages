@@ -20,21 +20,19 @@ library(rotl)
 #############################################################################
 ####### Reading in the data   #######
 #############################################################################
-# This data is stored in Teams; we have downloaded the most recent version to a local directory as of Sep 12, 2024
+# This data is stored in Teams; we have downloaded the most recent version to a local directory as of Sep 17, 2024
 
 
 # joshpath <- c("~/Dropbox/Microbial_Effects_Metaanalysis/")
+# path <- joshpath
 
 
 # gwen wd
 setwd("~/Desktop/afkhami_lab/meta_analysis/R")
-  
-  
-# path <- joshpath
 
 
 # raw_effects_df <- read_csv(file = paste0(path,("20240912_effect_sizes.csv"))) %>% 
-raw_effects_df <- read.csv("./raw_data/20240912_effect_sizes.csv") %>% 
+raw_effects_df <- read.csv("./raw_data/20240917_effect_sizes.csv") %>% 
   filter(!is.na(mean_symbiotic)) %>% 
   mutate(across(mean_symbiotic:n_aposymbiotic, as.numeric))
   # separate_wider_delim(symbiont_species, delim = " ", names = c("symbiont_genus"), too_many = "align_start")
@@ -55,6 +53,7 @@ variance_RII <- function(Bw, Bo, SDw, SDo, Nw, No){
 
 # calculate effects sizes and add to the data frame, also clean up the data frame
 invalid_genera <- c("AMF","NAB", "Endophytic", "DAXY0016C","DYXY033","DYSH004","DYXY023","DYXY013C","DYXY003","DYXY004","DYXY001","DYXYY2","DYXYXY1","DYXY002","DYXY111","DYXY112")
+# bookmark one ==== 
 # will need to come back to the "genera" above and manually determine the correct genus. for now, we omit them from analysis
 effects_df <- raw_effects_df %>% 
   mutate(
