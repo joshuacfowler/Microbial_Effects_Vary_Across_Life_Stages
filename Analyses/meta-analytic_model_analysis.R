@@ -146,10 +146,15 @@ synonyms(host_species_names, taxon_name = "populus euramericana")
 test_tree3 = tol_induced_subtree(ott_ids = host_species_names$ott_id)
 plot(test_tree3, show.tip.label = FALSE)
 
-# using rotl to check/filter symbiont_species_clean column
+# using rotl to check/filter symbiont taxonomy columns
+symbiont_genera = array(unique(effects_df$symbiont_genus_clean))
+symbiont_genera_names = tnrs_match_names(symbiont_genera)
+
 symbiont_names = array(unique(effects_df$symbiont_species_clean))
 symbiont_species_names = tnrs_match_names(symbiont_names)
 invalid_species = c("Wolbachia wAv", "Wolbachia wBv", "Mycorrhizal fungi", "NA fungi", "Tulasnella strain", "NA diazotrophic", "NA (non-rhizobial", " E.", "Bradyrhizobium strain", "Epichloe (coexisting", " AMF", "NA bacteria", "Ceratobasidium B-3C-1", "Ceratobasidium B-4D-3", "Ceratobasidium B-4D-2", "Ceratobasidium Z-3A-3-2", "NA isolate")
+# REVISIT: symbiont_names ====
+# need to relabel the species above so they can be identified
 symbiont_names_filtered = symbiont_names[!(symbiont_names %in% invalid_species)]
 symbiont_species_names = tnrs_match_names(symbiont_names_filtered)
 
@@ -162,7 +167,7 @@ which(!(is.na(find_mismatch_symbio$mismatch)))
 mismatch_rows_symbio = c(8, 9, 10, 11, 12, 13, 15, 18, 23, 37, 38, 46, 49, 50, 52, 54, 55, 60)
 mismatches_symbio = find_mismatch_symbio[mismatch_rows_symbio, ]
 print(mismatches_symbio$search_string)
-# REVISIT: symbiont_species_names ====
+# REVISIT: symbiont_names_filtered ====
 # need to manually check the search strings printed above by referencing the papers
 
 
