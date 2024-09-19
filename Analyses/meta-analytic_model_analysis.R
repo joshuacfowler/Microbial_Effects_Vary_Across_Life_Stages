@@ -31,10 +31,11 @@ setwd("~/Desktop/afkhami_lab/meta_analysis/R")
 
 
 # raw_effects_df <- read_csv(file = paste0(path,("20240912_effect_sizes.csv"))) %>% 
-raw_effects_df <- read.csv("./raw_data/20240917_effect_sizes.csv") %>% 
-  filter(!is.na(mean_symbiotic)) %>% 
-  mutate(across(mean_symbiotic:n_aposymbiotic, as.numeric))
-  # separate_wider_delim(symbiont_species, delim = " ", names = c("symbiont_genus"), too_many = "align_start")
+raw_effects_df <- read.csv("./raw_data/20240919_effect_sizes.csv") %>% 
+  mutate(across(mean_symbiotic:n_aposymbiotic, as.numeric)) %>%
+  filter(!(is.na(mean_symbiotic & (sd_symbiotic | se_symbiotic))))
+# REVISIT: filtering ==== 
+# study 24 is filtering incorrectly. two rows where the se_symbiotic = 0 were not included in the df. i'm not sure why
 
 # find out how many distinct studies we have extracted data from
 length(unique(raw_effects_df$study_number))
@@ -131,7 +132,7 @@ find_mismatch_host = host_species_names %>%
   mutate(mismatch = case_when((search_epithet == otl_epithet) ~ NA, TRUE ~ search_epithet))
 which(!(is.na(find_mismatch_host$mismatch)))
 # make sure to use the resulting row numbers from above as the values in c below
-mismatch_rows_host = c(7,21,37,38,49,61)
+mismatch_rows_host = c(6,19,34,35,51)
 mismatches_host = find_mismatch_host[mismatch_rows_host, ]
 print(mismatches_host$search_string)
 # REVISIT: host_species_names ====
@@ -140,7 +141,6 @@ synonyms(host_species_names, taxon_name = "fragaria x")
 synonyms(host_species_names, taxon_name = "schedonorus arundinaceus")
 synonyms(host_species_names, taxon_name = "achnatherum sibiricum")
 synonyms(host_species_names, taxon_name = "andropogon gerardii")
-synonyms(host_species_names, taxon_name = "setaria glauca")
 synonyms(host_species_names, taxon_name = "populus euramericana")
 
 test_tree3 = tol_induced_subtree(ott_ids = host_species_names$ott_id)
