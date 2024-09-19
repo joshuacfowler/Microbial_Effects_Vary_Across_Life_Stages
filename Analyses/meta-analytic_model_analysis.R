@@ -23,7 +23,7 @@ library(rotl)
 # This data is stored in Teams; we have downloaded the most recent version to a local directory as of Sep 12, 2024
 
 
-# joshpath <- c("~/Dropbox/Microbial_Effects_Metaanalysis/")
+joshpath <- c("~/Dropbox/Microbial_Effects_Metaanalysis/")
 
 
 # gwen wd
@@ -31,11 +31,11 @@ setwd("~/Desktop/afkhami_lab/meta_analysis/R/raw_data")
 gwenpath <- c("./")
   
   
-# path <- joshpath
+path <- joshpath
 path <- gwenpath
 
-
-raw_effects_df <- read_csv(file = paste0(path,("20240912_effect_sizes.csv"))) %>% 
+raw_effects_df <- read_csv(file = paste0(path,("Microbial Effects Literature Search(Effect_sizes).csv"))) %>% 
+# raw_effects_df <- read_csv(file = paste0(path,("20240912_effect_sizes.csv"))) %>% 
   filter(!is.na(mean_symbiotic)) %>% 
   mutate(across(mean_symbiotic:n_aposymbiotic, as.numeric))
   # separate_wider_delim(symbiont_species, delim = " ", names = c("symbiont_genus"), too_many = "align_start")
@@ -205,7 +205,7 @@ ggplot(data = prediction_df)+
 
 
 # Fitting a model across life stages
-fit <- lm(data = effects_df, formula = RII ~ 0 + lifestage_description)
+fit <- lm(data = effects_df, formula = RII ~ 0 + lifestage_general)
 fit <- lmer(data = effects_df, formula = RII ~ 0 + lifestage_description+ (1|study_number))
 fit <- lmer(data = effects_df, formula = RII ~ 0 + lifestage_description + (1|study_number) + (1|study_number:experiment_id) )
 
@@ -214,7 +214,7 @@ summary(fit)
 
 # Getting predictions from the model
 
-prediction_df <- expand.grid( lifestage_description = unique(effects_df$lifestage_description),
+prediction_df <- expand.grid( lifestage_general = unique(effects_df$lifestage_general),
                               study_number = NA,
                               experiment_id = NA)
 
@@ -226,9 +226,9 @@ prediction_df <- bind_cols(prediction_df, preds) %>%
 
 
 ggplot(data = prediction_df)+
-  geom_jitter(data = effects_df, aes( x= lifestage_description, y = RII), color = "blue", width = .1, alpha = .2)+
-  geom_point(aes(x = lifestage_description, y = fit), size = 3, alpha = .6) +
-  geom_linerange(aes(x = lifestage_description, ymin = lwr, ymax = upr)) + theme_bw()
+  geom_jitter(data = effects_df, aes( x= lifestage_general, y = RII), color = "blue", width = .1, alpha = .2)+
+  geom_point(aes(x = lifestage_general, y = fit), size = 3, alpha = .6) +
+  geom_linerange(aes(x = lifestage_general, ymin = lwr, ymax = upr)) + theme_bw()
 
 
   
@@ -291,7 +291,7 @@ fit <- brm(formula = lRR~ 0 + metric_category + (1|study_number) + (1|experiment
 
 # version incorporating measurement error
 effects_df_filtered <- effects_df %>% filter(!is.na(sd_RII))
-
+# fit <- brm(formula = RII|se(sd_RII, sigma = TRUE) ~ 0 + metric_category + (1+metric_category|study_number) + (1|study_number:experiment_id),
 fit <- brm(formula = RII|se(sd_RII, sigma = TRUE) ~ 0 + metric_category + (1|study_number) + (1|study_number:experiment_id),
            data = effects_df_filtered,
            family = "gaussian",
@@ -307,45 +307,45 @@ summary(fit)
 
 
 # Version rescaling the RII data and fitting to a beta distribution
-rescale <- function(x){(x+1)/2}
-unscale <- function(x){(x*2)-1}
-
-effects_rescaled = effects_df %>% 
-  mutate(RII_rescaled = rescale(RII))
-fit <- brm(formula = RII_rescaled~ 0 + metric_category + (1|study_number) + (1|experiment_label),
-           data = effects_rescaled, 
-           family = "zero_one_inflated_beta",
-           prior = c(set_prior("normal(0,1)", class = "b"),
-                     set_prior("student_t(3, 0, 2.5)", class = "sd")),
-           iter = mcmc_pars$iter,
-           chains = mcmc_pars$chains,
-           warmup = mcmc_pars$warmup)
-
-
-
-# Version incorporating the measuremenerror through distributional regression
-beta_formula <- bf(RII_rescaled ~ 0 + metric_category + (1|study_number) + (1|experiment_label),
-              phi ~ 0 + metric_category + (1|study_number) + (1|experiment_label))
-fit <- brm(formula = beta_formula,
-           data = effects_rescaled, 
-           family = zero_one_inflated_beta(),
-           prior = c(set_prior("normal(0,1)", class = "b"),
-                     set_prior("student_t(3, 0, 2.5)", class = "sd")),
-           iter = mcmc_pars$iter,
-           chains = mcmc_pars$chains,
-           warmup = mcmc_pars$warmup)
-
-# version incorporating measurement error
-fit <- brm(formula = RII|se(pooled_se) ~ 0 + metric_category + (1|study_number) + (1|study_number:experiment_id),
-           data = effects_df,
-           family = "gaussian",
-           prior = c(set_prior("normal(0,1)", class = "b"),
-                     set_prior("student_t(3, 0, 2.5)", class = "sd")),
-            iter = mcmc_pars$iter,
-           chains = mcmc_pars$chains,
-           warmup = mcmc_pars$warmup)
-
-summary(fit)
+# rescale <- function(x){(x+1)/2}
+# unscale <- function(x){(x*2)-1}
+# 
+# effects_rescaled = effects_df %>% 
+#   mutate(RII_rescaled = rescale(RII))
+# fit <- brm(formula = RII_rescaled~ 0 + metric_category + (1|study_number) + (1|experiment_label),
+#            data = effects_rescaled, 
+#            family = "zero_one_inflated_beta",
+#            prior = c(set_prior("normal(0,1)", class = "b"),
+#                      set_prior("student_t(3, 0, 2.5)", class = "sd")),
+#            iter = mcmc_pars$iter,
+#            chains = mcmc_pars$chains,
+#            warmup = mcmc_pars$warmup)
+# 
+# 
+# 
+# # Version incorporating the measuremenerror through distributional regression
+# beta_formula <- bf(RII_rescaled ~ 0 + metric_category + (1|study_number) + (1|experiment_label),
+#               phi ~ 0 + metric_category + (1|study_number) + (1|experiment_label))
+# fit <- brm(formula = beta_formula,
+#            data = effects_rescaled, 
+#            family = zero_one_inflated_beta(),
+#            prior = c(set_prior("normal(0,1)", class = "b"),
+#                      set_prior("student_t(3, 0, 2.5)", class = "sd")),
+#            iter = mcmc_pars$iter,
+#            chains = mcmc_pars$chains,
+#            warmup = mcmc_pars$warmup)
+# 
+# # version incorporating measurement error
+# fit <- brm(formula = RII|se(pooled_se) ~ 0 + metric_category + (1+|study_number) + (1|study_number:experiment_id),
+#            data = effects_df,
+#            family = "gaussian",
+#            prior = c(set_prior("normal(0,1)", class = "b"),
+#                      set_prior("student_t(3, 0, 2.5)", class = "sd")),
+#             iter = mcmc_pars$iter,
+#            chains = mcmc_pars$chains,
+#            warmup = mcmc_pars$warmup)
+# 
+# summary(fit)
 
 
 get_prior(fit)
@@ -365,6 +365,30 @@ ggplot(data = prediction_df)+
   # geom_linerange(aes(x = metric_category, ymin = Q25, ymax = Q75), lwd = 1.2) + 
   geom_linerange(aes(x = metric_category, ymin = Q2.5, ymax = Q97.5)) + 
   geom_point(aes(x = metric_category, y = Estimate), size = 3) +
+  theme_bw()
+
+
+
+
+prediction_perstudy_df <- expand.grid( metric_category = unique(effects_df$metric_category),
+                                       study_number = unique(effects_df_filtered$study_number),                              experiment_id = NA,
+                              sd_RII = 0)
+
+preds <- fitted(fit, newdata = prediction_perstudy_df, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), re_formula = ~(1|study_number))
+
+prediction_perstudy_df <- bind_cols(prediction_perstudy_df, preds) %>% 
+  group_by(metric_category) %>% 
+  arrange(Estimate) %>% 
+  mutate(ordered_id = row_number())
+
+ggplot(data = prediction_perstudy_df)+
+  # geom_linerange(aes(x = metric_category, ymin = Q25, ymax = Q75), lwd = 1.2) +
+  geom_vline(aes(xintercept = 0))+
+  geom_rect(data = prediction_df, aes(xmin=Q2.5, xmax=Q97.5, ymin=-Inf, ymax=Inf, fill = metric_category), alpha = .3)+
+  geom_vline(data = prediction_df, aes(xintercept = Estimate, color = metric_category))+
+  geom_linerange(aes(y = ordered_id, xmin = Q2.5, xmax = Q97.5), alpha = .7) +
+  geom_point(aes(x = Estimate, y = ordered_id), size = 1, alpha = .7) +
+  facet_wrap(~metric_category, scale = "free_y")+
   theme_bw()
 
 
