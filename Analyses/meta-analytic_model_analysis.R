@@ -22,7 +22,6 @@ library(metafor)
 # This data is stored in Teams; we have downloaded the most recent version to a local directory as of Sep 17, 2024
 
 
-<<<<<<< HEAD
 joshpath <- c("~/Dropbox/Microbial_Effects_Metaanalysis/")
 
 
@@ -35,11 +34,11 @@ path <- joshpath
 path <- gwenpath
 
 raw_effects_df <- read_csv(file = paste0(path,("Microbial Effects Literature Search(Effect_sizes).csv"))) %>% 
-# raw_effects_df <- read_csv(file = paste0(path,("20240912_effect_sizes.csv"))) %>% 
+# raw_effects_df <- read_csv(file = paste0(path,("20241012_effect_sizes.csv"))) %>% 
   filter(!is.na(mean_symbiotic)) %>% 
   mutate(across(mean_symbiotic:n_aposymbiotic, as.numeric))
   # separate_wider_delim(symbiont_species, delim = " ", names = c("symbiont_genus"), too_many = "align_start")
-=======
+
 # joshpath <- c("~/Dropbox/Microbial_Effects_Metaanalysis/")
 # path <- joshpath
 
@@ -49,12 +48,12 @@ setwd("~/Desktop/afkhami_lab/meta_analysis/R")
 
 
 # raw_effects_df <- read_csv(file = paste0(path,("20240912_effect_sizes.csv"))) %>% 
-raw_effects_df <- read.csv("./raw_data/20240919_effect_sizes.csv") %>% 
+raw_effects_df <- read.csv("./raw_data/20241012_effect_sizes.csv") %>% 
   mutate(across(mean_symbiotic:n_aposymbiotic, as.numeric)) %>%
   filter(!(is.na(mean_symbiotic & (sd_symbiotic | se_symbiotic))))
 # REVISIT: filtering ==== 
 # study 24 is filtering incorrectly. two rows where the se_symbiotic = 0 were not included in the df. i'm not sure why
->>>>>>> ac5967bc68f8c024b57cc96550fe5dae145d05cb
+
 
 # find out how many distinct studies we have extracted data from
 length(unique(raw_effects_df$study_number))
@@ -194,7 +193,8 @@ print(mismatches_symbio$search_string)
 
 ######### plotting prelim data ########
 ggplot(effects_df) +
-  geom_histogram(aes(x = RII))+facet_wrap(~metric_category, scales = "free")
+  geom_histogram(aes(x = RII))+facet_wrap(~metric_category, scales = "free")+expand_limits(x = c(-1,1))
+ggsave("./20241012_metric_effects.png")
 
 ggplot(effects_df) +
   geom_histogram(aes(x = lRR))+facet_wrap(~metric_category, scales = "free")
@@ -203,12 +203,13 @@ ggplot(effects_df) +
   geom_histogram(aes(x = cohensD))+facet_wrap(~metric_category, scales = "free")
 
 ggplot(effects_df) +
-  geom_histogram(aes(x = RII))+facet_wrap(~lifestage_general, scales = "free")
+  geom_histogram(aes(x = RII))+facet_wrap(~lifestage_general, scales = "free")+expand_limits(x = c(-1,1))
+ggsave("./20241012_lifestage_effects.png")
+
+
 
 # prelim funnel plot
 funnel(effects_df$RII, effects_df$var_RII, yaxis = "vi")
-
-
 
 
 
