@@ -22,42 +22,34 @@ library(metafor)
 # This data is stored in Teams; we have downloaded the most recent version to a local directory as of Sep 17, 2024
 
 
-<<<<<<< HEAD
 joshpath <- c("~/Dropbox/Microbial_Effects_Metaanalysis/")
 
 
 # gwen wd
-setwd("~/Desktop/afkhami_lab/meta_analysis/R/raw_data")
+# setwd("~/Desktop/afkhami_lab/meta_analysis/R/raw_data")
 gwenpath <- c("./")
   
   
 path <- joshpath
-path <- gwenpath
+# path <- gwenpath
 
 raw_effects_df <- read_csv(file = paste0(path,("Microbial Effects Literature Search(Effect_sizes).csv"))) %>% 
 # raw_effects_df <- read_csv(file = paste0(path,("20240912_effect_sizes.csv"))) %>% 
   filter(!is.na(mean_symbiotic)) %>% 
   mutate(across(mean_symbiotic:n_aposymbiotic, as.numeric))
   # separate_wider_delim(symbiont_species, delim = " ", names = c("symbiont_genus"), too_many = "align_start")
-=======
-# joshpath <- c("~/Dropbox/Microbial_Effects_Metaanalysis/")
-# path <- joshpath
 
 
-# gwen wd
-setwd("~/Desktop/afkhami_lab/meta_analysis/R")
-
-
-# raw_effects_df <- read_csv(file = paste0(path,("20240912_effect_sizes.csv"))) %>% 
-raw_effects_df <- read.csv("./raw_data/20240919_effect_sizes.csv") %>% 
-  mutate(across(mean_symbiotic:n_aposymbiotic, as.numeric)) %>%
-  filter(!(is.na(mean_symbiotic & (sd_symbiotic | se_symbiotic))))
-# REVISIT: filtering ==== 
-# study 24 is filtering incorrectly. two rows where the se_symbiotic = 0 were not included in the df. i'm not sure why
->>>>>>> ac5967bc68f8c024b57cc96550fe5dae145d05cb
+skipped_studies <- read_csv(file = paste0(path,("Microbial Effects Literature Search(Effect_sizes).csv"))) %>% 
+  filter(is.na(mean_symbiotic & study_number <= max(unique(raw_effects_df$study_number)))) %>% 
+  group_by(study_number) %>% 
+  summarize(drop = paste(transcriber_initials, na.omit(drop_reason), collapse = " "))
 
 # find out how many distinct studies we have extracted data from
 length(unique(raw_effects_df$study_number))
+length(unique(filter(raw_effects_df, !is.na(se_symbiotic))$study_number)) # number of studies if we drop the ones that don't have SD (probably some of these have SE but not SD, but still)
+
+length(unique(skipped_studies$study_number))
 
 variance_RII <- function(Bw, Bo, SDw, SDo, Nw, No){
   # calculating the variance of RII following formula from from Armas et al. 2004 supplement
