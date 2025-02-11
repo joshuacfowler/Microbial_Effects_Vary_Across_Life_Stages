@@ -3,8 +3,11 @@
 # Authors: Josh Fowler and Gwen Pohlmann #####
 # Date: May 14, 2024 #####
 
-library(renv)
+# library(renv)
 # renv::init()
+# renv::snapshot()
+# renv::deactivate()
+
 
 library(tidyverse)
 
@@ -17,7 +20,8 @@ library(brms)
 library(rotl)
 library(metafor)
 
-
+invlogit<-function(x){exp(x)/(1+exp(x))}
+logit = function(x) { log(x/(1-x)) }
 ####### Reading in the data   #######
 # This data is stored in Teams; we have downloaded the most recent version to a local directory as of Sep 17, 2024
 
@@ -38,31 +42,16 @@ raw_effects_df <- read_csv(file = paste0(path,("Microbial Effects Literature Sea
   filter(!is.na(mean_symbiotic)) %>% 
   mutate(across(mean_symbiotic:n_aposymbiotic, as.numeric))
   # separate_wider_delim(symbiont_species, delim = " ", names = c("symbiont_genus"), too_many = "align_start")
-<<<<<<< HEAD
 
 
 skipped_studies <- read_csv(file = paste0(path,("Microbial Effects Literature Search(Effect_sizes).csv"))) %>% 
   filter(is.na(mean_symbiotic & study_number <= max(unique(raw_effects_df$study_number)))) %>% 
   group_by(study_number) %>% 
   summarize(drop = paste(transcriber_initials, na.omit(drop_reason), collapse = " "))
-=======
 
 # joshpath <- c("~/Dropbox/Microbial_Effects_Metaanalysis/")
 # path <- joshpath
 
-
-# gwen wd
-setwd("~/Desktop/afkhami_lab/meta_analysis/R")
-
-
-# raw_effects_df <- read_csv(file = paste0(path,("20240912_effect_sizes.csv"))) %>% 
-raw_effects_df <- read.csv("./raw_data/20241012_effect_sizes.csv") %>% 
-  mutate(across(mean_symbiotic:n_aposymbiotic, as.numeric)) %>%
-  filter(!(is.na(mean_symbiotic & (sd_symbiotic | se_symbiotic))))
-# REVISIT: filtering ==== 
-# study 24 is filtering incorrectly. two rows where the se_symbiotic = 0 were not included in the df. i'm not sure why
-
->>>>>>> 7acb547cf840072d139ba452570537ce3c20a237
 
 # find out how many distinct studies we have extracted data from
 length(unique(raw_effects_df$study_number))
@@ -162,7 +151,7 @@ find_mismatch_host = host_species_names %>%
   mutate(mismatch = case_when((search_epithet == otl_epithet) ~ NA, TRUE ~ search_epithet))
 which(!(is.na(find_mismatch_host$mismatch)))
 # make sure to use the resulting row numbers from above as the values in c below
-mismatch_rows_host = c(6,19,34,35,51)
+mismatch_rows_host = c(7, 21, 39, 40, 51, 66, 76)
 mismatches_host = find_mismatch_host[mismatch_rows_host, ]
 print(mismatches_host$search_string)
 # REVISIT: host_species_names ====
@@ -203,6 +192,17 @@ print(mismatches_symbio$search_string)
 
 
 
+####### Reading in the data   #######
+effects_df <- read_csv("effects_df.csv") %>% 
+  filter(metric_category!="population metric") %>% 
+  filter(!is.na(sd_RII))
+
+
+
+
+
+
+
 ######### plotting prelim data ########
 ggplot(effects_df) +
   geom_histogram(aes(x = RII))+facet_wrap(~metric_category, scales = "free")+expand_limits(x = c(-1,1))
@@ -227,11 +227,248 @@ funnel(effects_df$RII, effects_df$var_RII, yaxis = "vi")
 
 ####### Fitting meta-analytic model  #######
 
+
+# fitting brms
+## run this code to optimize computer system settings for MCMC
+rstan_options(auto_write = FALSE)
+options(mc.cores = parallel::detectCores())
+set.seed(123)
+
+## MCMC settings
+mcmc_pars <- list(
+  iter = 5000, 
+  warmup = 2500, 
+  thin = 1, 
+  chains = 3
+)
+
+# Version that does  incorporate measurement error
+fit <- brm(formula = RII|se(sd_RII, sigma = TRUE) ~ 0 + metric_category + (1|study_number) + (1|experiment_label) + (1+metric_category|host_order) + (1+metric_category|host_family) + (1+metric_category|host_genus),
+             #(1|study_number) + (1|experiment_label) + (1+metric_category|host_order) + (1+metric_category|host_family),
+           data = effects_df, 
+           family = "gaussian",
+           prior = c(set_prior("normal(0,.25)", class = "b"),
+                     set_prior("normal(0,.25)", class = "sd"),
+                     set_prior("normal(0,.25)", class = "sigma")),
+           iter = mcmc_pars$iter,
+           chains = mcmc_pars$chains,
+           warmup = mcmc_pars$warmup, 
+           control = list(adapt_delta = 0.99))
+summary(fit)
+
+
+
+# getting and plotting the model prediction
+prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category),
+                              study_number = NA,
+                              experiment_id = NA,
+                              host_order =  NA,
+                              sd_RII = 0)
+
+# plotting overall mean prediction
+preds <- fitted(fit, newdata = prediction_df, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), re_formula = NA)
+
+prediction_df <- bind_cols(prediction_df, preds) #%>% 
+# mutate(across(Estimate:Q97.5,~unscale(.)))
+
+
+overall_effects_plot <- ggplot(data = prediction_df)+
+  geom_jitter(data = effects_df, aes( x= metric_category, y = RII, color = metric_category), width = .1, alpha = .2)+
+  # geom_linerange(aes(x = metric_category, ymin = Q25, ymax = Q75), lwd = 1.2) + 
+  geom_linerange(aes(x = metric_category, ymin = Q2.5, ymax = Q97.5)) + 
+  geom_point(aes(x = metric_category, y = Estimate), size = 1.5) +
+  # facet_wrap(~host_order)+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave(overall_effects_plot, filename = "Plots/overall_effects_plot.png", width = 7, height = 5)
+
+
+
+
+
+# plotting prediction for specific orders
+prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category),
+                              study_number = NA,
+                              experiment_id = NA,
+                              host_order =  unique(effects_df$host_order)[c(2,3,4,5,7,20)],
+                              sd_RII = 0)
+preds <- fitted(fit, newdata = prediction_df, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), re_formula = ~ (metric_category|host_order))
+
+prediction_df <- bind_cols(prediction_df, preds) #%>% 
+# mutate(across(Estimate:Q97.5,~unscale(.)))
+
+effects_df_filtered <- effects_df %>% filter(!is.na(RII), host_order %in%unique(effects_df$host_order)[c(2,3,4,5,7,20)])
+
+order_effects_plot <- ggplot(data = prediction_df)+
+  geom_jitter(data = effects_df_filtered, aes( x= metric_category, y = RII, color = metric_category), width = .1, alpha = .2)+
+  # geom_linerange(aes(x = metric_category, ymin = Q25, ymax = Q75), lwd = 1.2) + 
+  geom_linerange(aes(x = metric_category, ymin = Q2.5, ymax = Q97.5)) + 
+  geom_point(aes(x = metric_category, y = Estimate), size = 1.5) +
+  facet_wrap(~host_order)+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave(order_effects_plot, filename = "Plots/order_effects_plot.png", width = 7, height = 5)
+
+
+
+# plotting prediction for specific orders
+prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category),
+                              study_number = NA,
+                              experiment_id = NA,
+                              host_order =  "Asparagales",
+                              host_family = "Orchidaceae",
+                              host_genus = "Dendrobium",
+                              sd_RII = 0)
+preds <- fitted(fit, newdata = prediction_df, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), re_formula = ~ (metric_category|host_order))
+
+prediction_df <- bind_cols(prediction_df, preds) #%>% 
+# mutate(across(Estimate:Q97.5,~unscale(.)))
+
+effects_df_filtered <- effects_df %>% filter(!is.na(RII), host_genus == "Dendrobium")
+
+genus_effects_plot <- ggplot(data = prediction_df)+
+  geom_jitter(data = effects_df_filtered, aes( x= metric_category, y = RII, color = metric_category), width = .1, alpha = .2)+
+  # geom_linerange(aes(x = metric_category, ymin = Q25, ymax = Q75), lwd = 1.2) + 
+  geom_linerange(aes(x = metric_category, ymin = Q2.5, ymax = Q97.5)) + 
+  geom_point(aes(x = metric_category, y = Estimate), size = 1.5) +
+  facet_wrap(~host_order)+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave(genus_effects_plot, filename = "Plots/genus_effects_plot.png", width = 7, height = 5)
+
+
+
+genus_line_effects_plot <- ggplot(data = prediction_df)+
+  geom_jitter(data = effects_df_filtered, aes( x= metric_category, y = RII, color = metric_category), width = .1, alpha = .2)+
+  # geom_line(data = effects_df_filtered, aes(x = metric_category, y = RII, group = interaction(experiment_id, host_species, symbiont_species)))+
+  # geom_linerange(aes(x = metric_category, ymin = Q25, ymax = Q75), lwd = 1.2) + 
+  # geom_linerange(aes(x = metric_category, ymin = Q2.5, ymax = Q97.5)) + 
+  # geom_point(aes(x = metric_category, y = Estimate), size = 1.5) +
+  facet_wrap(~host_order)+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+genus_line_effects_plot
+ggsave(genus_line_effects_plot, filename = "Plots/genus_line_effects_plot.png", width = 7, height = 5)
+
+
+
+
+
+
+
+
+##### Fitting a model for variation in microbial effect across life stage 
+# Version that does  incorporate measurement error
+fit <- brm(formula = RII|se(sd_RII, sigma = TRUE) ~ 0 + lifestage_general + (1|study_number) + (1|experiment_label) + (1+lifestage_general|host_order) + (1+lifestage_general|host_family) + (1+lifestage_general|host_genus),
+           #(1|study_number) + (1|experiment_label) + (1+metric_category|host_order) + (1+metric_category|host_family),
+           data = effects_df, 
+           family = "gaussian",
+           prior = c(set_prior("normal(0,.25)", class = "b"),
+                     set_prior("normal(0,.25)", class = "sd"),
+                     set_prior("normal(0,.25)", class = "sigma")),
+           iter = mcmc_pars$iter,
+           chains = mcmc_pars$chains,
+           warmup = mcmc_pars$warmup, 
+           control = list(adapt_delta = 0.99))
+summary(fit)
+
+
+# getting and plotting the model prediction
+prediction_df <- expand.grid( lifestage_general = na.omit(unique(effects_df$lifestage_general)),
+                              study_number = NA,
+                              experiment_id = NA,
+                              host_order =  NA,
+                              sd_RII = 0)
+
+# plotting overall mean prediction
+preds <- fitted(fit, newdata = prediction_df, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), re_formula = NA)
+
+prediction_df <- bind_cols(prediction_df, preds) #%>% 
+# mutate(across(Estimate:Q97.5,~unscale(.)))
+
+
+stages.overall_effects_plot <- ggplot(data = prediction_df)+
+  geom_jitter(data = effects_df, aes( x= lifestage_general, y = RII, color = lifestage_general), width = .1, alpha = .2)+
+  # geom_linerange(aes(x = metric_category, ymin = Q25, ymax = Q75), lwd = 1.2) + 
+  geom_linerange(aes(x = lifestage_general, ymin = Q2.5, ymax = Q97.5)) + 
+  geom_point(aes(x = lifestage_general, y = Estimate), size = 1.5) +
+  # facet_wrap(~host_order)+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave(stages.overall_effects_plot, filename = "Plots/stages.overall_effects_plot.png", width = 7, height = 5)
+
+
+
+# plotting prediction for specific orders
+prediction_df <- expand.grid( lifestage_general = na.omit(unique(effects_df$lifestage_general)),
+                              study_number = NA,
+                              experiment_id = NA,
+                              host_order =  unique(effects_df$host_order)[c(2,3,4,5,7,20)],
+                              sd_RII = 0)
+preds <- fitted(fit, newdata = prediction_df, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), re_formula = ~ (1+lifestage_general|host_order))
+
+prediction_df <- bind_cols(prediction_df, preds) #%>% 
+# mutate(across(Estimate:Q97.5,~unscale(.)))
+
+effects_df_filtered <- effects_df %>% filter(!is.na(RII), host_order %in%unique(effects_df$host_order)[c(2,3,4,5,7,20)])
+
+stage.order_effects_plot <- ggplot(data = prediction_df)+
+  geom_jitter(data = effects_df_filtered, aes( x= lifestage_general, y = RII, color = lifestage_general), width = .1, alpha = .2)+
+  # geom_linerange(aes(x = metric_category, ymin = Q25, ymax = Q75), lwd = 1.2) + 
+  geom_linerange(aes(x = lifestage_general, ymin = Q2.5, ymax = Q97.5)) + 
+  geom_point(aes(x = lifestage_general, y = Estimate), size = 1.5) +
+  facet_wrap(~host_order)+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave(stage.order_effects_plot, filename = "Plots/stage.order_effects_plot.png", width = 7, height = 5)
+
+
+
+
+
+
+
+
+
+# trying to visualize the potential conflicting vital rate responses
+
+variance_effects_df <- effects_df %>% 
+  group_by(study_number, host_genus, host_id, symbiont_genus, symbiont_id) %>% 
+  summarize(cross_variance = var(RII))
+  
+  
+  pivot_wider(names_from = metric_category, values_from = RII)
+  
+  
+
+
+
+
+
+
+
+
+
+
+
+#
+
+
+
+
+
+
+
+
+
+
+
 # Testing out simpler models
 fit <- lm(data = effects_df, formula = RII ~ 0 + metric_category)
 fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|study_number))
 fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|study_number) + (1|study_number:experiment_id) )
 fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|study_number) + (1|experiment_label) )
+fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|study_number) + (1|experiment_label) + (1|host_order/host_family))
 
 # fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|study_number) + (1|experiment_label) + (1|treatment_label) + (1|species_label) +(metric_category|study_number))
 
@@ -243,9 +480,11 @@ summary(fit)
 # Getting predictions from the model
 
 prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category),
-                              study_number = NA)
+                              study_number = NA,
+                              host_order = c("Poales", "Fabales"),
+                              host_family = NA)
 
-preds <- predict(fit, newdat = prediction_df, se.fit = TRUE, re.form =  NA)
+preds <- predict(fit, newdat = prediction_df, se.fit = TRUE, re.form =  ~(1|host_order))
 
 prediction_df <- bind_cols(prediction_df, preds) %>% 
   mutate(upr = fit + 1.96*se.fit,
