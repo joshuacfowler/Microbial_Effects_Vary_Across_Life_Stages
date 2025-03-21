@@ -24,184 +24,19 @@ library(patchwork)
 invlogit<-function(x){exp(x)/(1+exp(x))}
 logit = function(x) { log(x/(1-x)) }
 ####### Reading in the data   #######
-# This data is stored in Teams; we have downloaded the most recent version to a local directory as of Sep 17, 2024
-
-
-joshpath <- c("~/Dropbox/Microbial_Effects_Metaanalysis/")
-
-
-# gwen wd
-# setwd("~/Desktop/afkhami_lab/meta_analysis/R/raw_data")
-gwenpath <- c("./")
-  
-  
-path <- joshpath
-# path <- gwenpath
-
-raw_effects_df <- read_csv(file = paste0(path,("Microbial Effects Literature Search(Effect_sizes).csv"))) %>% 
-# raw_effects_df <- read_csv(file = paste0(path,("20241012_effect_sizes.csv"))) %>% 
-  filter(!is.na(mean_symbiotic)) %>% 
-  mutate(across(mean_symbiotic:n_aposymbiotic, as.numeric))
-  # separate_wider_delim(symbiont_species, delim = " ", names = c("symbiont_genus"), too_many = "align_start")
-
-
-skipped_studies <- read_csv(file = paste0(path,("Microbial Effects Literature Search(Effect_sizes).csv"))) %>% 
-  filter(is.na(mean_symbiotic & study_number <= max(unique(raw_effects_df$study_number)))) %>% 
-  group_by(study_number) %>% 
-  summarize(drop = paste(transcriber_initials, na.omit(drop_reason), collapse = " "))
-
-# joshpath <- c("~/Dropbox/Microbial_Effects_Metaanalysis/")
-# path <- joshpath
-
-
-# find out how many distinct studies we have extracted data from
-length(unique(raw_effects_df$study_number))
-length(unique(filter(raw_effects_df, !is.na(se_symbiotic))$study_number)) # number of studies if we drop the ones that don't have SD (probably some of these have SE but not SD, but still)
-
-length(unique(skipped_studies$study_number))
-
-variance_RII <- function(Bw, Bo, SDw, SDo, Nw, No){
-  # calculating the variance of RII following formula from from Armas et al. 2004 supplement
-  VARw <- (SDw^2)
-  VARo <- (SDo^2)
-  first_term = ((VARw/Nw) + (VARo/No))/((Bw+Bo)^2)
-  second_term = (Bw-Bo)^2/(Bw+Bo)^2
-  rho = ((VARw/Nw)-(VARo/No))/((VARw/Nw)+(VARo/No))
-  V_rii = first_term*(1+second_term - ((2*rho*(Bw-Bo))/(Bw+Bo)))
-  return(V_rii)
-}
-
-# calculate effects sizes and add to the data frame, also clean up the data frame
-invalid_genera <- c("AMF","NAB", "Endophytic", "DAXY0016C","DYXY033","DYSH004","DYXY023","DYXY013C","DYXY003","DYXY004","DYXY001","DYXYY2","DYXYXY1","DYXY002","DYXY111","DYXY112")
-# REVISIT: invalid genera ==== 
-# come back to the "genera" above and manually determine the correct genus. for now, we omit them from analysis
-effects_df <- raw_effects_df %>% 
-  mutate(
-    calc_sd_symbiotic = case_when((is.na(sd_symbiotic)) & (!is.na(se_symbiotic)) & (!is.na(n_symbiotic)) ~ (se_symbiotic*(sqrt(n_symbiotic))), TRUE ~ sd_symbiotic),
-    calc_sd_aposymbiotic = case_when((is.na(sd_aposymbiotic)) & (!is.na(se_aposymbiotic)) & (!is.na(n_aposymbiotic)) ~ (se_aposymbiotic*(sqrt(n_aposymbiotic))), TRUE ~ sd_aposymbiotic),
-    calc_se_symbiotic = case_when((is.na(se_symbiotic)) & (!is.na(sd_symbiotic)) & (!is.na(n_symbiotic)) ~ (sd_symbiotic/(sqrt(n_symbiotic))), TRUE ~ se_symbiotic),
-    calc_se_aposymbiotic = case_when((is.na(se_aposymbiotic)) & (!is.na(sd_aposymbiotic)) & (!is.na(n_aposymbiotic)) ~ (sd_aposymbiotic/(sqrt(n_aposymbiotic))), TRUE ~ se_aposymbiotic)
-  ) %>%
-  mutate(
-    RII  = (mean_symbiotic - mean_aposymbiotic)/(mean_aposymbiotic + mean_symbiotic),
-    cohensD = (mean_symbiotic - mean_aposymbiotic)/sqrt((calc_sd_aposymbiotic^2 + calc_sd_symbiotic^2)/2),
-    lRR = log(mean_symbiotic/mean_aposymbiotic),
-    var_RII =variance_RII(Bw = mean_symbiotic, Bo = mean_aposymbiotic, SDw = calc_sd_symbiotic, SDo = calc_sd_aposymbiotic, Nw = n_symbiotic, No = n_aposymbiotic),
-    sd_RII = sqrt(var_RII),
-    pooled_sd = sqrt((sd_aposymbiotic^2 + sd_symbiotic^2)/2),
-    pooled_se = pooled_sd/sqrt(n_aposymbiotic + n_symbiotic)) %>% #I will used the studies pooled se as part of the measurement-error model in BRMS, rather than using hedge's G
-  #hedgesG = (mean_aposymbiotic - mean_symbiotic)/sqrt((n_aposymbiotic-1)*sd_aposymbiotic)
-  mutate(treatment_label = paste(study_number, experiment_id, treatment_id, sep = "-")) %>%
-  mutate(experiment_label = paste(study_number, experiment_id, sep = "-")) %>% 
-  mutate(lifestage_general = case_when(startsWith(lifestage_description, "juvenile") ~ "juvenile",
-                                       startsWith(lifestage_description, "embryo") ~ "embryo",
-                                       TRUE ~ lifestage_description)) %>% 
-  mutate(symbiont_genus = word(symbiont_species, 1)) %>% 
-  mutate(symbiont_genus_clean = 
-           case_when((symbiont_genus == "E.") | (symbiont_genus == "Epichloe\xa8") | (symbiont_genus == "Epichlo\xeb") ~ "Epichloe",
-                     (symbiont_genus %in% invalid_genera) ~ NA,
-                     TRUE ~ symbiont_genus)) %>%
-  mutate(symbiont_species_clean = paste(symbiont_genus_clean, word(symbiont_species, 2), sep = " ")) %>%
-  mutate(host_genus = word(host_species, 1)) %>%
-  mutate(host_species_clean = paste(host_genus, word(host_species, 2), sep = " "))
-
-
-
-
-######## trying out the rotl package #########
-
-host_genera = array(unique(effects_df$host_genus))
-# having issues with schedonorus. it has flag "barren" which OTL says means there are only higher taxa at and below this node, no species or unranked tips
-host_genera = host_genera[host_genera != "Schedonorus"]
-
-# matching the names we have to the ott_ids in OTL
-host_genera_names = tnrs_match_names(host_genera)
-mult_matches = subset(host_genera_names, number_matches > 1)
-inspect(host_genera_names, taxon_name = "prunella")
-# REVISIT: host_genera_names ==== 
-# need to manually check that all genus search strings are matched to the correct ott_ids
-
-# making taxon map
-taxon_map = structure(host_genera_names$search_string, names = host_genera_names$unique_name)
-taxon_map["Tolumnia (genus in kingdom Archaeplastida)"]
-
-# testing some phylogeny building
-test_tree = tol_induced_subtree(ott_ids = host_genera_names$ott_id)
-plot(test_tree, show.tip.label = FALSE)
-
-test_tree2 = tol_induced_subtree(ott_id(host_genera_names)[is_in_tree(ott_id(host_genera_names))])
-plot(test_tree2, show.tip.label = FALSE)
-
-setdiff(test_tree$tip.label, test_tree2$tip.label)
-
-otl_tips2 = strip_ott_ids(test_tree2$tip.label, remove_underscores = TRUE)
-test_tree2$tip.label = taxon_map[otl_tips2]
-plot(test_tree2)
-
-
-# using rotl to check/filter host_species_clean column
-host_names = array(unique(effects_df$host_species_clean))
-# had to use the code below when making test_tree3 b/c Error: node_id 'ott3915043' was not found!list(ott3915043 = "pruned_ott_id")
-#host_names = host_names[!(host_names == "Populus euramericana")]
-
-host_species_names = tnrs_match_names(host_names)
-
-find_mismatch_host = host_species_names %>% 
-  mutate(search_epithet = word(search_string, 2)) %>% 
-  mutate(otl_epithet = word(unique_name, 2)) %>% 
-  mutate(mismatch = case_when((search_epithet == otl_epithet) ~ NA, TRUE ~ search_epithet))
-which(!(is.na(find_mismatch_host$mismatch)))
-# make sure to use the resulting row numbers from above as the values in c below
-mismatch_rows_host = c(7, 21, 39, 40, 51, 66, 76)
-mismatches_host = find_mismatch_host[mismatch_rows_host, ]
-print(mismatches_host$search_string)
-# REVISIT: host_species_names ====
-# need to manually check that ott_ids are correctly matched by looking at the synonyms for the species below & referencing the papers
-synonyms(host_species_names, taxon_name = "fragaria x")
-synonyms(host_species_names, taxon_name = "schedonorus arundinaceus")
-synonyms(host_species_names, taxon_name = "achnatherum sibiricum")
-synonyms(host_species_names, taxon_name = "andropogon gerardii")
-synonyms(host_species_names, taxon_name = "populus euramericana")
-
-test_tree3 = tol_induced_subtree(ott_ids = host_species_names$ott_id)
-plot(test_tree3, show.tip.label = FALSE)
-
-# using rotl to check/filter symbiont taxonomy columns
-symbiont_genera = array(unique(effects_df$symbiont_genus_clean))
-symbiont_genera_names = tnrs_match_names(symbiont_genera)
-
-symbiont_names = array(unique(effects_df$symbiont_species_clean))
-symbiont_species_names = tnrs_match_names(symbiont_names)
-invalid_species = c("Wolbachia wAv", "Wolbachia wBv", "Mycorrhizal fungi", "NA fungi", "Tulasnella strain", "NA diazotrophic", "NA (non-rhizobial", " E.", "Bradyrhizobium strain", "Epichloe (coexisting", " AMF", "NA bacteria", "Ceratobasidium B-3C-1", "Ceratobasidium B-4D-3", "Ceratobasidium B-4D-2", "Ceratobasidium Z-3A-3-2", "NA isolate")
-# REVISIT: symbiont_names ====
-# need to relabel the species above so they can be identified
-symbiont_names_filtered = symbiont_names[!(symbiont_names %in% invalid_species)]
-symbiont_species_names = tnrs_match_names(symbiont_names_filtered)
-
-find_mismatch_symbio = symbiont_species_names %>%
-  mutate(search_epithet = word(search_string, 2)) %>%
-  mutate(otl_epithet = word(unique_name, 2)) %>%
-  mutate(mismatch = case_when((search_epithet == otl_epithet) ~ NA, TRUE ~ search_epithet))
-which(!(is.na(find_mismatch_symbio$mismatch)))
-# make sure to use the resulting row numbers from above as the values in c below
-mismatch_rows_symbio = c(8, 9, 10, 11, 12, 13, 15, 18, 23, 37, 38, 46, 49, 50, 52, 54, 55, 60)
-mismatches_symbio = find_mismatch_symbio[mismatch_rows_symbio, ]
-print(mismatches_symbio$search_string)
-# REVISIT: symbiont_names_filtered ====
-# need to manually check the search strings printed above by referencing the papers
-
-
-
+# This data is stored in Teams; we have downloaded the most recent version to a local directory as of Mar 18, 2025
+# Data is imported, goes through some organization/cleaning, and we connect each study to its taxonomic information in the data_processing.R script
 
 ####### Reading in the data   #######
 effects_df <- read_csv("effects_df.csv") %>% 
-  filter(metric_category!="population metric") %>% 
+  filter(metric_category!="population metric") %>%   
   filter(!is.na(sd_RII))
 
 
 
-
-
+length(unique(effects_df$study_number))
+length(unique(effects_df$experiment_label))
+dim(effects_df)
 
 ######### plotting prelim data ########
 ggplot(effects_df) +
@@ -262,6 +97,18 @@ fit <- brm(formula = RII|se(sd_RII, sigma = TRUE) ~ 0 + metric_category + (1|stu
 summary(fit)
 
 
+# graphical posterior predictive check
+VR_ppc_overlay_plot <- pp_check(fit, type = "dens_overlay", ndraws = 100)+
+  labs(x = "RII", y = "Density")+
+  theme_classic()
+VR_ppc_overlay_plot
+ggsave(VR_ppc_overlay_plot, filename = "Plots/VR_ppc_overlay_plot.png", width = 4, height = 4)
+
+VR_ppc_hist_plot <- pp_check(fit, type = "stat_grouped", group = "metric_category", stat = "mean", ndraws = 500)+
+  labs(x = "RII", y = "Density")+
+  theme_classic()
+VR_ppc_hist_plot
+ggsave(VR_ppc_hist_plot, filename = "Plots/VR_ppc_hist_plot.png", width = 4, height = 4)
 
 # getting and plotting the model prediction
 prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category),
@@ -421,6 +268,22 @@ fit <- brm(formula = RII|se(sd_RII, sigma = TRUE) ~ 0 + lifestage_general + (1|s
            warmup = mcmc_pars$warmup, 
            control = list(adapt_delta = 0.99))
 summary(fit)
+
+
+
+
+# graphical posterior predictive check
+LS_ppc_overlay_plot <- pp_check(fit, type = "dens_overlay", ndraws = 100)+
+  labs(x = "RII", y = "Density")+
+  theme_classic()
+LS_ppc_overlay_plot
+ggsave(LS_ppc_overlay_plot, filename = "Plots/LS_ppc_overlay_plot.png", width = 4, height = 4)
+
+LS_ppc_hist_plot <- pp_check(fit, type = "stat_grouped", group = "lifestage_general", stat = "mean", ndraws = 500)+
+  labs(x = "RII", y = "Density")+
+  theme_classic()
+LS_ppc_hist_plot
+ggsave(LS_ppc_hist_plot, filename = "Plots/LS_ppc_hist_plot.png", width = 4, height = 4)
 
 
 # getting and plotting the model prediction
