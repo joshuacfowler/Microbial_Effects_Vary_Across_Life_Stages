@@ -24,13 +24,14 @@ library(patchwork)
 invlogit<-function(x){exp(x)/(1+exp(x))}
 logit = function(x) { log(x/(1-x)) }
 ####### Reading in the data   #######
-# This data is stored in Teams; we have downloaded the most recent version to a local directory as of Mar 18, 2025
+# The raw data is stored in Teams; we have downloaded the most recent version to a local directory as of May 6, 2025
 # Data is imported, goes through some organization/cleaning, and we connect each study to its taxonomic information in the data_processing.R script
 
 ####### Reading in the data   #######
 effects_df <- read_csv("effects_df.csv") %>% 
   filter(metric_category!="population metric") %>%   
-  filter(!is.na(sd_RII))
+  filter(!is.na(sd_RII)) %>% 
+  mutate(RII_01 = (RII+1)/2)
 
 
 
@@ -54,9 +55,13 @@ ggplot(effects_df) +
 ggsave("./20241012_lifestage_effects.png")
 
 
+familyXorder_layout <- ggplot(effects_df)+
+  geom_tile(aes(x = host_order, y = host_family))+
+  theme_minimal()+theme(axis.text.x = element_text(hjust = 1, angle = 45))
+ggsave(familyXorder_layout, filename = "Plots/familyXorder_layout.png")
 
 # prelim funnel plot
-funnel(effects_df$RII, effects_df$var_RII, yaxis = "vi")
+# funnel(effects_df$RII, effects_df$var_RII, yaxis = "vi")
 
 
 
@@ -81,15 +86,37 @@ mcmc_pars <- list(
 
 ##### Evaluating variation in RII across vital rate categories ###########
 # Version that  incorporates measurement error
+# zoib_model <- bf(
+#   RII_01|se(sd_RII, sigma = TRUE) ~ 0 + metric_category,
+#   phi ~ 1,
+#   zoi ~ 1,
+#   coi ~ 1,
+#   family = zero_one_inflated_beta()
+# )
+# fit <- brm(formula = zoib_model,
+#            #(1|study_number) + (1|experiment_label) + (1+metric_category|host_order) + (1+metric_category|host_family),
+#            data = effects_df, 
+#            family = zero_one_inflated_beta(),
+#            prior = c(set_prior("normal(0,.2)", class = "b"),
+#                      set_prior("normal(0,.25)", class = "sd"),
+#                      set_prior("normal(0,.25)", class = "sigma")),
+#            iter = mcmc_pars$iter,
+#            chains = mcmc_pars$chains,
+#            warmup = mcmc_pars$warmup, 
+#            control = list(adapt_delta = 0.99))
+# summary(fit)
+
+
+
 
 
 fit <- brm(formula = RII|se(sd_RII, sigma = TRUE) ~ 0 + metric_category + (1|study_number) + (1|experiment_label) + (1+metric_category|host_order) + (1+metric_category|host_family) + (1+metric_category|host_genus),
              #(1|study_number) + (1|experiment_label) + (1+metric_category|host_order) + (1+metric_category|host_family),
            data = effects_df, 
            family = "gaussian",
-           prior = c(set_prior("normal(0,.25)", class = "b"),
-                     set_prior("normal(0,.25)", class = "sd"),
-                     set_prior("normal(0,.25)", class = "sigma")),
+           prior = c(set_prior("normal(0,.2)", class = "b"),
+                     set_prior("normal(0,1)", class = "sd"),
+                     set_prior("normal(0,1)", class = "sigma")),
            iter = mcmc_pars$iter,
            chains = mcmc_pars$chains,
            warmup = mcmc_pars$warmup, 
@@ -97,6 +124,11 @@ fit <- brm(formula = RII|se(sd_RII, sigma = TRUE) ~ 0 + metric_category + (1|stu
 summary(fit)
 
 
+
+# look into projpred for model comparison
+
+
+  
 # graphical posterior predictive check
 VR_ppc_overlay_plot <- pp_check(fit, type = "dens_overlay", ndraws = 100)+
   labs(x = "RII", y = "Density")+
@@ -161,16 +193,19 @@ top_orders <- names(sort(table(effects_df$host_order), decreasing = TRUE)[1:6])
 
 
 prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category),
-                              study_number = NA,
-                              experiment_id = NA,
-                              host_order =  top_orders,
+                              study_number = "22",
+                              experiment_id = "22-1",
+                              host_order =  "Asparagales",
+                              host_family = "Orchidaceae",
+                              host_genus = c("Dendrobium","Vanda"),
+                              #host_order =  top_orders,
                               sd_RII = 0)
-preds <- fitted(fit, newdata = prediction_df, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), re_formula = ~ (metric_category|host_order))
+preds <- fitted(fit, newdata = prediction_df, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), re_formula = ~ (1 + metric_category|host_order) + (1+metric_category|host_family) + (1+metric_category|host_genus) )
 
 prediction_df <- bind_cols(prediction_df, preds) #%>% 
 # mutate(across(Estimate:Q97.5,~unscale(.)))
 
-effects_df_filtered <- effects_df %>% filter(!is.na(RII), host_order %in% top_orders)
+effects_df_filtered <- effects_df %>% filter(!is.na(RII), host_genus == "Vanda"| host_genus == "Dendrobium")#host_order %in% top_orders)
 
 order_VR_effects_plot <- ggplot(data = prediction_df)+
   geom_hline(aes(yintercept = 0), color = "black", lwd = .1)+
@@ -178,7 +213,7 @@ order_VR_effects_plot <- ggplot(data = prediction_df)+
   # geom_linerange(aes(x = metric_category, ymin = Q25, ymax = Q75), lwd = 1.2) + 
   geom_linerange(aes(x = metric_category, ymin = Q2.5, ymax = Q97.5)) + 
   geom_point(aes(x = metric_category, y = Estimate), shape = 21, fill = "black", color = "white", size = 1.5) +
-  facet_wrap(~host_order, nrow = 2)+
+  facet_wrap(~host_order+host_family + host_genus, nrow = 2)+
   scale_fill_manual(values = metric_colors)+
   guides(fill = "none")+
   labs(x = "")+
@@ -186,7 +221,7 @@ order_VR_effects_plot <- ggplot(data = prediction_df)+
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         strip.background = element_rect(fill = "grey95"))
 order_VR_effects_plot
-ggsave(order_VR_effects_plot, filename = "Plots/order_VR_effects_plot.png", width = 7, height = 5)
+ggsave(order_VR_effects_plot, filename = "Plots/order_VR_effects_plot.png", width = 5, height = 5)
 
 
 
@@ -343,14 +378,17 @@ top_orders <- names(sort(table(effects_df$host_order), decreasing = TRUE)[1:6])
 prediction_df <- expand.grid( lifestage_general = unique(LS_effects_df$lifestage_general),
                               study_number = NA,
                               experiment_id = NA,
-                              host_order =  top_orders,
+                              host_order =  "Asparagales",
+                              host_family = "Orchidaceae",
+                              host_genus = "Paphiopedilum",#top_orders,
                               sd_RII = 0)
 preds <- fitted(fit, newdata = prediction_df, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), re_formula = ~ (metric_category|host_order))
 
 prediction_df <- bind_cols(prediction_df, preds) #%>% 
 # mutate(across(Estimate:Q97.5,~unscale(.)))
 
-effects_df_filtered <- LS_effects_df %>% filter(!is.na(RII), host_order %in% top_orders)
+effects_df_filtered <- LS_effects_df %>% filter(!is.na(RII),host_genus == "Paphiopedilum")
+                                                #host_order %in% top_orders)
 
 order_LS_effects_plot <- ggplot(data = prediction_df)+
   geom_hline(aes(yintercept = 0), color = "black", lwd = .1)+
