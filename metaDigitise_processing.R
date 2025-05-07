@@ -16,5 +16,5 @@ View(data)
 # calculating some effects sizes from Chi-square data
 library(esc)
 
-esc_chisq(22.67, totaln = 600, es.type = "d")
+esc_chisq(3.737, totaln = 100, es.type = "d")
 esc_f()
