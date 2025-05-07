@@ -31,8 +31,16 @@ gwenpath <- c("./")
 path <- joshpath
 # path <- gwenpath
 
+full_effects_df <- read_csv(file = paste0(path,("Microbial Effects Literature Search(Effect_sizes).csv"))) %>% 
+  mutate(across(mean_symbiotic:n_aposymbiotic, as.numeric))
+
+# find out how many distinct studies we have extracted data from
+missing_studies <- full_effects_df[is.na(full_effects_df$mean_symbiotic),]
+length(unique(full_effects_df[is.na(full_effects_df$mean_symbiotic),]$study_number))
+
+
+
 raw_effects_df <- read_csv(file = paste0(path,("Microbial Effects Literature Search(Effect_sizes).csv"))) %>% 
-  # raw_effects_df <- read_csv(file = paste0(path,("20241012_effect_sizes.csv"))) %>% 
   filter(!is.na(mean_symbiotic)) %>% 
   mutate(across(mean_symbiotic:n_aposymbiotic, as.numeric))
 
@@ -41,7 +49,6 @@ raw_effects_df <- read_csv(file = paste0(path,("Microbial Effects Literature Sea
 # find out how many distinct studies we have extracted data from
 length(unique(raw_effects_df$study_number))
 length(unique(filter(raw_effects_df, !is.na(se_symbiotic))$study_number)) # number of studies if we drop the ones that don't have SD (probably some of these have SE but not SD, but still)
-
 
 
 variance_RII <- function(Bw, Bo, SDw, SDo, Nw, No){
@@ -88,18 +95,24 @@ effects_calc_df <- raw_effects_df %>%
   mutate(symbiont_species_clean = paste(symbiont_genus_clean, word(symbiont_species, 2), sep = " ")) %>%
   mutate(host_genus = word(host_species, 1),
          host_genus = case_when(host_genus == "Schedonorus" ~ "Lolium", TRUE ~ host_genus)) %>% # having issues with schedonorus. it has flag "barren" which OTL says means there are only higher taxa at and below this node, no species or unranked tips
-  mutate(host_species_clean = paste(host_genus, word(host_species, 2), sep = " ")) %>% 
-  filter(!is.na(sd_symbiotic) | !is.na(calc_sd_symbiotic))
+  mutate(host_species_clean = paste(host_genus, word(host_species, 2), sep = " "))  
+  # filter(!is.na(sd_symbiotic) | !is.na(calc_sd_symbiotic))
 
 
 # summarizing how many experiments across the studies
 length(unique(effects_calc_df$experiment_label))
+length(unique(effects_calc_df$study_number))
+
+
+# looking at studies we skipped
+
 
 symbiota_summary <- effects_calc_df %>% 
   mutate(symbiota_label = paste(symbiont_species_clean, host_species_clean, sep = "_"))
 length(unique(symbiota_summary$symbiota_label))
 length(unique(effects_calc_df$host_genus))
 length(unique(effects_calc_df$symbiont_genus_clean))
+
 ######## trying out the rotl package #########
 
 host_genera = array(unique(effects_calc_df$host_genus))
