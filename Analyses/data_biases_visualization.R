@@ -209,3 +209,50 @@ study_map <- article_map /experiment_map + plot_annotation(tag_levels = "A")
 study_map
 
 ggsave(study_map, filename = "Plots/study_map.png", width = 10, height = 8)
+
+
+
+
+# making some histograms of taxonomy/VR coverage
+ggplot(effects_df) + 
+  geom_histogram(aes(x = host_order, fill = host_class), stat = "count")+
+  labs(y = "# of measurements", x = "Order")+
+  theme_bw()+
+  theme(axis.text = element_text(hjust = 1, angle = 45))
+
+effects_VR_count <- effects_df %>% 
+  group_by(metric_category, host_order) %>% 
+  summarize(count = n())
+
+VR_count_plot <- ggplot(effects_VR_count)+
+  geom_point(aes( x = factor(metric_category, levels = c("growth", "survival", "reproduction", "recruitment")), y = host_order, size = count, color = metric_category))+
+  scale_color_manual(values = metric_colors)+
+  labs(x = "", y = "Host Order", color = "Vital Rate")+
+  theme_bw()+
+  theme(axis.text = element_text(hjust = 1, angle = 45))
+VR_count_plot
+
+
+effects_LS_count <- effects_df %>% 
+  group_by(lifestage_general, host_order) %>% 
+  summarize(count = n())
+
+LS_count_plot <- ggplot(effects_LS_count)+
+  geom_point(aes( x= factor(lifestage_general, levels = c("embryo", "juvenile", "adult", "combines multiple")), y = host_order, size = count, color = lifestage_general))+
+  scale_color_manual(values = c("embryo" = stage_colors[1],
+                                "juvenile" = stage_colors[2],
+                                "adult" = stage_colors[3],
+                                "combines multiple" = stage_colors[4]))+
+  labs(x = "", y = "", color = "Life Stage")+
+  theme_bw()+
+  theme(axis.text = element_text(hjust = 1, angle = 45),
+        axis.text.y = element_blank())
+LS_count_plot
+
+
+counts_plot <- VR_count_plot + LS_count_plot + plot_annotation(tag_levels = "A")
+
+counts_plot
+ggsave(counts_plot, filename = "Plots/counts_plot.png", width = 10, height = 8)
+
+             
