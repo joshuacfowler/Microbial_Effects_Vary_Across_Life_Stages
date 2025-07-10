@@ -30,6 +30,7 @@ logit = function(x) { log(x/(1-x)) }
 ####### Reading in the data   #######
 effects_df <- read_csv("effects_df.csv") %>% 
   filter(metric_category!="population metric") %>%   
+  filter()
   filter(!is.na(sd_RII)) %>% 
   mutate(RII_01 = (RII+1)/2)
 
@@ -107,10 +108,10 @@ mcmc_pars <- list(
 # summary(fit)
 
 
+mix <- mixture(bernoulli, gaussian)
 
-
-
-fit <- brm(formula = RII|se(sd_RII, sigma = TRUE) ~ 0 + metric_category + (1|study_number) + (1|experiment_label) + (1+metric_category|host_order) + (1+metric_category|host_family) + (1+metric_category|host_genus),
+#re-try with different syntax for nested effects
+fit <- brm(formula = RII|se(sd_RII, sigma = TRUE) ~ 0 + metric_category + (1|study_number) + (1|experiment_label) + (1+metric_category|host_family) + (1+metric_category|host_genus),
              #(1|study_number) + (1|experiment_label) + (1+metric_category|host_order) + (1+metric_category|host_family),
            data = effects_df, 
            family = "gaussian",
@@ -121,10 +122,24 @@ fit <- brm(formula = RII|se(sd_RII, sigma = TRUE) ~ 0 + metric_category + (1|stu
            chains = mcmc_pars$chains,
            warmup = mcmc_pars$warmup, 
            control = list(adapt_delta = 0.99))
-summary(fit)
+# summary(fit)
 
 
 
+fit2 <- brm(formula = RII|se(sd_RII, sigma = TRUE) ~ 0 + metric_category + (1|study_number) + (1|experiment_label) + (1+metric_category|host_order) + (1|experiment_label) + (1+metric_category|host_family) + (1+metric_category|host_genus),
+           #(1|study_number) + (1|experiment_label) + (1+metric_category|host_order) + (1+metric_category|host_family),
+           data = effects_df, 
+           family = "gaussian",
+           prior = c(set_prior("normal(0,.2)", class = "b"),
+                     set_prior("normal(0,1)", class = "sd"),
+                     set_prior("normal(0,1)", class = "sigma")),
+           iter = mcmc_pars$iter,
+           chains = mcmc_pars$chains,
+           warmup = mcmc_pars$warmup, 
+           control = list(adapt_delta = 0.99))
+
+loo(fit,fit2)
+loo_compare(fit,fit2)
 # look into projpred for model comparison
 
 
@@ -134,13 +149,13 @@ VR_ppc_overlay_plot <- pp_check(fit, type = "dens_overlay", ndraws = 100)+
   labs(x = "RII", y = "Density")+
   theme_classic()
 VR_ppc_overlay_plot
-ggsave(VR_ppc_overlay_plot, filename = "Plots/VR_ppc_overlay_plot.png", width = 4, height = 4)
+ggsave(VR_ppc_overlay_plot, filename = "Plots/VR_ppc_overlay_plot_just_family.png", width = 4, height = 4)
 
 VR_ppc_hist_plot <- pp_check(fit, type = "stat_grouped", group = "metric_category", stat = "mean", ndraws = 500)+
   labs(x = "RII", y = "Density")+
   theme_classic()
 VR_ppc_hist_plot
-ggsave(VR_ppc_hist_plot, filename = "Plots/VR_ppc_hist_plot.png", width = 4, height = 4)
+ggsave(VR_ppc_hist_plot, filename = "Plots/VR_ppc_hist_plot_just_family.png", width = 4, height = 4)
 
 # getting and plotting the model prediction
 prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category),
@@ -172,7 +187,7 @@ overall_VR_effects_plot <- ggplot(data = prediction_df)+
   theme_bw()+
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 overall_VR_effects_plot
-ggsave(overall_VR_effects_plot, filename = "Plots/overall_VR_effects_plot.png", width = 7, height = 5)
+ggsave(overall_VR_effects_plot, filename = "Plots/overall_VR_effects_plot_just_family.png", width = 7, height = 5)
 
 
 # some posterior summaries
@@ -197,15 +212,15 @@ prediction_df <- expand.grid( metric_category = unique(effects_df$metric_categor
                               experiment_id = "22-1",
                               host_order =  "Asparagales",
                               host_family = "Orchidaceae",
-                              host_genus = c("Dendrobium","Vanda"),
+                              # host_genus = c("Dendrobium","Vanda"),
                               #host_order =  top_orders,
                               sd_RII = 0)
-preds <- fitted(fit, newdata = prediction_df, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), re_formula = ~ (1 + metric_category|host_order) + (1+metric_category|host_family) + (1+metric_category|host_genus) )
+preds <- fitted(fit, newdata = prediction_df, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), re_formula = ~ (1+metric_category|host_family) )
 
 prediction_df <- bind_cols(prediction_df, preds) #%>% 
 # mutate(across(Estimate:Q97.5,~unscale(.)))
 
-effects_df_filtered <- effects_df %>% filter(!is.na(RII), host_genus == "Vanda"| host_genus == "Dendrobium")#host_order %in% top_orders)
+effects_df_filtered <- effects_df %>% filter(!is.na(RII), host_family == "Orchidaceae" ) #host_genus == "Vanda"| host_genus == "Dendrobium")#host_order %in% top_orders)
 
 order_VR_effects_plot <- ggplot(data = prediction_df)+
   geom_hline(aes(yintercept = 0), color = "black", lwd = .1)+
@@ -213,7 +228,7 @@ order_VR_effects_plot <- ggplot(data = prediction_df)+
   # geom_linerange(aes(x = metric_category, ymin = Q25, ymax = Q75), lwd = 1.2) + 
   geom_linerange(aes(x = metric_category, ymin = Q2.5, ymax = Q97.5)) + 
   geom_point(aes(x = metric_category, y = Estimate), shape = 21, fill = "black", color = "white", size = 1.5) +
-  facet_wrap(~host_order+host_family + host_genus, nrow = 2)+
+  facet_wrap(~host_order+host_family, nrow = 2)+
   scale_fill_manual(values = metric_colors)+
   guides(fill = "none")+
   labs(x = "")+
@@ -221,7 +236,7 @@ order_VR_effects_plot <- ggplot(data = prediction_df)+
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         strip.background = element_rect(fill = "grey95"))
 order_VR_effects_plot
-ggsave(order_VR_effects_plot, filename = "Plots/order_VR_effects_plot.png", width = 5, height = 5)
+ggsave(order_VR_effects_plot, filename = "Plots/order_VR_effects_plot_just_family.png", width = 5, height = 5)
 
 
 
