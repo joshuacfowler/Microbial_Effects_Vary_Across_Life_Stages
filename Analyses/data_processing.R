@@ -174,6 +174,8 @@ unique(host_taxonomy_df$host_kingdom)
 
 
 effects_df <- effects_calc_df %>% 
+  filter(metric_category!="population metric") %>% 
+  filter(lifestage_description!="combines multiple") %>% 
   mutate(search_string = tolower(host_genus)) %>% 
   left_join(host_taxonomy_df)
 
