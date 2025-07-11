@@ -25,6 +25,7 @@ logit = function(x) { log(x/(1-x)) }
 # Data is imported, goes through some organization/cleaning, and we connect each study to its taxonomic information in the data_processing.R script
 
 ####### Reading in the data   #######
+
 effects_df <- read_csv("effects_df.csv") %>% 
   filter(!is.na(sd_RII)) %>% 
   mutate(total_n = n_aposymbiotic+n_symbiotic,
@@ -51,7 +52,7 @@ effects_scaled <- effects_df %>%
   mutate(scaled_RII = RII/se_RII,
          precision_RII = 1/se_RII,
          samplesize_RII = 1/n_symbiotic) %>% 
-  filter(scaled_RII> -Inf & scaled_RII < Inf) %>% 
+  # filter(scaled_RII> -Inf & scaled_RII < Inf) %>%
   filter(precision_RII<30000) %>%
   mutate(metric_category_nice = case_when(grepl("growth", metric_category) ~ "Growth",
                                           grepl("reproduction", metric_category) ~ "Reproduction",
@@ -270,7 +271,19 @@ ggsave(bias_plot, filename = "Plots/bias_plot_lifestage.png", width = 5, height 
 
 
 ####### Visualizing the general categories across data and mapping ##########
-effects_df_summary <- effects_scaled %>% 
+effects_filtered<- effects_df %>% 
+  mutate(scaled_RII = RII/se_RII,
+         precision_RII = 1/se_RII,
+         samplesize_RII = 1/n_symbiotic) %>% 
+  # filter(scaled_RII> -Inf & scaled_RII < Inf) %>%
+  filter(experiment_id != "112-1") %>%
+  mutate(metric_category_nice = case_when(grepl("growth", metric_category) ~ "Growth",
+                                          grepl("reproduction", metric_category) ~ "Reproduction",
+                                          grepl("recruitment", metric_category) ~ "Recruitment",
+                                          grepl("survival", metric_category) ~ "Survival"))
+
+
+effects_df_summary <- effects_filtered %>% 
   group_by(country) %>% 
   dplyr::summarize(article_count = length(unique(study_number)),
                    experiment_count = length(unique(experiment_label)))
@@ -289,7 +302,7 @@ article_map <- ggplot(effects_df_summary)+
   labs(x = "Longitude", y = "Latitude")+
   theme_bw()
 
-article_map
+# article_map
 
 
 experiment_map <- ggplot(effects_df_summary)+
@@ -304,7 +317,7 @@ experiment_map <- ggplot(effects_df_summary)+
   theme_bw()
 
 
-experiment_map
+# experiment_map
 
 
 study_map <- article_map /experiment_map + plot_annotation(tag_levels = "A")
@@ -322,7 +335,7 @@ ggplot(effects_df) +
   theme_bw()+
   theme(axis.text = element_text(hjust = 1, angle = 45))
 
-effects_VR_count <- effects_scaled %>% 
+effects_VR_count <- effects_filtered %>% 
   group_by(metric_category, host_order) %>% 
   summarize(count = n())
 
@@ -335,7 +348,7 @@ VR_count_plot <- ggplot(effects_VR_count)+
 VR_count_plot
 
 
-effects_LS_count <- effects_scaled %>% 
+effects_LS_count <- effects_filtered %>% 
   group_by(lifestage_general, host_order) %>% 
   summarize(count = n())
 
@@ -359,26 +372,27 @@ ggsave(counts_plot, filename = "Plots/counts_plot.png", width = 7, height = 6)
 
 
 # summaries across the entire dataset
-order_summary <- effects_scaled %>% 
+order_summary <- effects_filtered %>% 
   group_by(host_family) %>% 
   summarize(n())
-taxonomy_summary <- effects_scaled %>% 
+taxonomy_summary <- effects_filtered %>% 
   group_by(.) %>% 
   dplyr::summarize(n_order = length(unique(host_order)),
                    n_family = length(unique(host_family)),
                    n_genus = length(unique(host_genus)))
 
 
-paper_summary <- effects_scaled %>% 
+paper_summary <- effects_filtered %>% 
   group_by(.) %>% 
   dplyr::summarize(n_articles = length(unique(study_number)),
                    n_experiment = length(unique(experiment_label)))
 
-symbiota_counts <- effects_scaled %>% 
+symbiota_counts <- effects_filtered %>% 
   mutate(symbiota_id = paste(host_species_clean, symbiont_species, sep = "_")) %>% 
+  mutate(metricXstage = paste0(metric_description, lifestage_description, sep = "_")) %>% 
   # summarize(length(unique(symbiota_id)))
   group_by(symbiota_id) %>% 
-  summarize(n_symbiota = length(unique(metric_description)))
+  summarize(n_symbiota = length(unique(metricXstage)))
 
 
 juv_summary <- effects_LS_count %>% 
@@ -393,7 +407,7 @@ growth_summary <- effects_VR_count %>%
 
 
              
-lab_summary <- effects_scaled %>% 
+lab_summary <- effects_filtered %>% 
   group_by(experiment_setting) %>% 
   summarize(number = n(),
             percent = number/sum(effects_VR_count$count))

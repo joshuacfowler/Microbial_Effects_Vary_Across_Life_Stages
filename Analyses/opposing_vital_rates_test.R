@@ -24,6 +24,8 @@ effects_df <- read_csv("effects_df.csv")
 # also note that I need to investigate the cases with RII exactly = 0
 
 multiple_metrics_df <- effects_df %>%
+  filter(experiment_id != "112-1") %>% 
+  filter(!is.na(sd_RII)) %>% 
   filter(RII != 0) %>% 
   mutate(positive = case_when(RII>0 ~ "positive", 
                               RII <0 ~ "negative")) %>% 
@@ -51,7 +53,9 @@ ggplot(multiple_metrics_df)+
 
 
 ####### simulating a null distribution by permuting assigned microbial effects #######
-permute_df <- effects_df %>% 
+permute_df <- effects_df %>%
+  filter(experiment_id != "112-1") %>% 
+  filter(!is.na(sd_RII)) %>% 
   filter(RII != 0) %>% 
   mutate(metricXstage = paste0(metric_description, lifestage_description, sep = "_")) %>% 
   mutate(positive = case_when(RII>0 ~ "positive", 
@@ -101,14 +105,25 @@ trt_order <- c("All Negative", "Opposing", "All Positive")
 #   theme_minimal()+
 #   theme(strip.background = element_blank())
   
-  
+# calculating quantiles from permuted data
+
+permuted_quant <- permuted_long %>% 
+  filter(real_or == "Permuted data") %>% 
+  group_by(name, real_or) %>% 
+  summarize(mean = mean(value),
+            Q02.5 = quantile(value, .025),
+            Q97.5 = quantile(value, .975),
+            n = n())
+
 
 permutation_plot <- ggplot(permuted_counts)+
   geom_jitter(aes(y = factor(name, levels = trt_order), x = value, color= real_or, fill = real_or, alpha = real_or, shape = real_or, size = real_or), height = .3)+
+  geom_linerange(data = permuted_quant, aes( y = factor(name, levels = trt_order), xmin = Q02.5, xmax = Q97.5), lwd = .3)+
+  geom_point(data = permuted_quant, aes(y = factor(name, levels = trt_order), x = mean), shape = 18)+
   geom_point(data = real_counts, aes(y = factor(name, levels = trt_order), x = value, color= real_or, fill = real_or, alpha = real_or, shape = real_or, size = real_or))+
   scale_color_manual(values = c("red", "black"))+
   scale_fill_manual(values = c("red", NA))+
-  scale_alpha_manual(values = c(1,.2))+
+  scale_alpha_manual(values = c(1,.1))+
   scale_shape_manual(values = c(16,21))+
   scale_size_manual(values = c(2,1))+
   labs(x = "# of symbiota", y = "", color = "", fill = "", alpha = "", shape = "", size = "")+
