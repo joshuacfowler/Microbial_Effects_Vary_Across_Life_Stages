@@ -89,8 +89,13 @@ effects_calc_df <- raw_effects_df %>%
                                        TRUE ~ lifestage_description)) %>% 
   mutate(symbiont_genus = word(symbiont_species, 1)) %>% 
   mutate(symbiont_genus_clean = 
-           case_when((symbiont_genus == "E.") | (symbiont_genus == "Epichloe\xa8") | (symbiont_genus == "Epichlo\xeb") ~ "Epichloe",
-                     (symbiont_genus %in% invalid_genera) ~ NA,
+           case_when((symbiont_genus == "E.") | (symbiont_genus == "Epichloe\xa8") | (symbiont_genus == "Epichlo\xeb") |(symbiont_genus == "Epichloe¨")|(symbiont_genus == "Epichloë")~ "Epichloe",
+                     (symbiont_genus == "AMF")|(symbiont_genus == "Mycorrhizal")| grepl("DYXY", symbiont_genus) | grepl("DAXY", symbiont_genus) | grepl("DYSH", symbiont_genus)| grepl("AMG", symbiont_genus) ~ "mycorrhizal fungi",
+                     (symbiont_genus == "Endophytic") ~ "endophytic fungi",
+                     (symbiont_genus == "NAB")|  (symbiont_genus %in% c("L1", "L12", "L-7Q", "L1+L-7Q", "L12+L-7Q")) ~ "plant growth promoting bacteria",
+                     (symbiont_genus %in% c("Da-KP-0-1", "Ps-KT-0-1", "Epulorhiza.")) ~ "Epulorhiza",
+                     (symbiont_genus == "Candidatus") ~ "Megaira",
+                     #(symbiont_genus %in% invalid_genera) ~ NA,
                      TRUE ~ symbiont_genus)) %>%
   mutate(symbiont_species_clean = paste(symbiont_genus_clean, word(symbiont_species, 2), sep = " ")) %>%
   mutate(host_genus = word(host_species, 1),
@@ -113,7 +118,7 @@ length(unique(symbiota_summary$symbiota_label))
 length(unique(effects_calc_df$host_genus))
 length(unique(effects_calc_df$symbiont_genus_clean))
 
-######## trying out the rotl package #########
+######## pulling in host taxonomy with the rotl package #########
 
 host_genera = array(unique(effects_calc_df$host_genus))
 # having issues with schedonorus. it has flag "barren" which OTL says means there are only higher taxa at and below this node, no species or unranked tips
@@ -168,6 +173,59 @@ unique(host_taxonomy_df$host_kingdom)
 
   
 
+######## getting broad symbiont taxonomy with the rotl package for summaries #########
+
+
+symbiont_genera = array(unique(effects_calc_df$symbiont_genus_clean))
+
+
+
+# matching the names we have to the ott_ids in OTL
+symbiont_genera_names = tnrs_match_names(symbiont_genera) %>% 
+  filter(!is.na(ott_id))
+
+# we can inspect and update those taxa which have multiple matches. Fortunately (as of Jan 28, 2025) the function chose the correct taxa in all cases. 
+mult_matches = subset(symbiont_genera_names, number_matches > 1)
+
+
+inspect(symbiont_genera_names, taxon_name = "ensifer")
+
+
+# symbiont_genera_names <- update(symbiont_genera_names,
+#                          taxon_name = "serendipita",
+#                          new_row_number = 2
+# )
+
+# test_tree = tol_induced_subtree(ott_ids = symbiont_genera_names$ott_id)
+# plot(test_tree, show.tip.label = FALSE)
+# 
+# symbiont_cov_matrix <- vcv(test_tree)
+
+# get a slightly cleaner version of the genus info
+symbiont_genera_ott <- symbiont_genera_names %>% 
+  mutate(genus_ott_id = as.character(ott_id),
+         symbiont_genus_name = as.character(unique_name)) %>% select(genus_ott_id, symbiont_genus_name, search_string) 
+
+
+# and then connect this to the full taxonomy
+symbiont_taxonomy <- tax_lineage(taxonomy_taxon_info(symbiont_genera_names$ott_id, include_lineage = TRUE))
+
+
+symbiont_taxonomy_df <- bind_rows(symbiont_taxonomy, .id = "genus_ott_id") %>% 
+  left_join(symbiont_genera_ott, by = join_by(genus_ott_id)) %>% 
+  select(-unique_name, -ott_id) %>%
+  # group_by(genus_ott_id) %>% 
+  # mutate(rank_number = row_number()) %>% 
+  filter(rank != "no rank") %>% 
+  pivot_wider(names_from = c(rank), values_from = c(name), names_prefix = "symbiont_", values_fn = list) %>% 
+  select(genus_ott_id, symbiont_genus_name, search_string, symbiont_domain, symbiont_kingdom, symbiont_phylum, symbiont_class, symbiont_order, symbiont_family ) %>% 
+  unnest(cols = everything()) 
+
+unique(symbiont_taxonomy_df$symbiont_class)
+unique(symbiont_taxonomy_df$symbiont_family)
+unique(symbiont_taxonomy_df$symbiont_kingdom)
+unique(symbiont_taxonomy_df$symbiont_domain)
+
 
 
 # Joining the effect sizes with taxonomy
@@ -177,7 +235,17 @@ effects_df <- effects_calc_df %>%
   filter(metric_category!="population metric") %>% 
   filter(lifestage_description!="combines multiple") %>% 
   mutate(search_string = tolower(host_genus)) %>% 
-  left_join(host_taxonomy_df)
+  left_join(host_taxonomy_df) %>% rename("host_genus_ott_id" = "genus_ott_id" ) %>% 
+  mutate(search_string = tolower(symbiont_genus_clean)) %>% 
+  left_join(symbiont_taxonomy_df) %>% rename("symbiont_genus_ott_id" = "genus_ott_id" ) %>% 
+  mutate(symbiont_kingdom = case_when(symbiont_genus_clean %in% c("mycorrhizal fungi", "endophytic fungi") ~ "Fungi", TRUE ~ symbiont_kingdom),
+         symbiont_domain = case_when(symbiont_genus_clean %in% c("mycorrhizal fungi", "endophytic fungi") ~ "Eukaryota",
+                                     symbiont_genus_clean %in% c("plant growth promoting bacteria") ~ "Bacteria", TRUE ~ symbiont_domain),
+         symbiont_category = case_when(symbiont_kingdom == "Fungi" ~ "Fungi",
+                                       symbiont_domain == "Bacteria" ~ "Bacteria",
+                                       symbiont_domain == "Eukaryota" & is.na(symbiont_kingdom)  ~ "Algae")) 
+
+
 
 write_csv(effects_df, "effects_df.csv")  
 
