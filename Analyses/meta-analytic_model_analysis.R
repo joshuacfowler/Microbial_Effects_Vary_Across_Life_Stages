@@ -153,7 +153,8 @@ VR_ppc_hist_plot <- pp_check(fit, type = "stat_grouped", group = "metric_categor
   labs(x = "RII", y = "Density")+
   theme_classic()
 VR_ppc_hist_plot
-ggsave(VR_ppc_hist_plot, filename = "Plots/VR_ppc_hist_plot_just_family.png", width = 4, height = 4)
+ggsave(VR_ppc_hist_plot, filename = "Plots/VR_ppc_hist_plot_just_family.png", width = 5, height = 4)
+
 
 # getting and plotting the model prediction
 prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category),
@@ -346,9 +347,9 @@ fit <- brm(formula = RII|se(sd_RII, sigma = TRUE) ~ 0 + lifestage_general + (1|s
            #(1|study_number) + (1|experiment_label) + (1+metric_category|host_order) + (1+metric_category|host_family),
            data = effects_df, 
            family = "gaussian",
-           prior = c(set_prior("normal(0,.25)", class = "b"),
-                     set_prior("normal(0,.25)", class = "sd"),
-                     set_prior("normal(0,.25)", class = "sigma")),
+           prior = c(set_prior("normal(0,.2)", class = "b"),
+                     set_prior("normal(0,1)", class = "sd"),
+                     set_prior("normal(0,1)", class = "sigma")),
            iter = mcmc_pars$iter,
            chains = mcmc_pars$chains,
            warmup = mcmc_pars$warmup, 
@@ -464,7 +465,7 @@ ggsave(family_LS_effects_plot, filename = "Plots/family_LS_effects_plot.png", wi
 
 
 # some posterior summaries
-posts <- tidybayes::epred_draws(fit, newdata = prediction_df, re_formula = NA, ndraws = 500)
+posts <- tidybayes::epred_draws(fit, newdata = prediction_df, re_formula = ~ (1+ lifestage_general|host_family), ndraws = 500)
 
 posts_summary <- posts %>%
   group_by(host_family, lifestage_general) %>% 
@@ -473,8 +474,15 @@ posts_summary <- posts %>%
             prop_pos = (sum(.epred>0)/n_draws)*100)
 
 
+prob_juv_over_emb <-sum(posts[posts$lifestage_general == "juvenile" & posts$host_family == "Poaceae",]$.epred > posts[posts$lifestage_general == "embryo" & posts$host_family == "Poaceae",]$.epred)/500
 
+prob_adult_over_emb <-sum(posts[posts$lifestage_general == "adult" & posts$host_family == "Poaceae",]$.epred > posts[posts$lifestage_general == "embryo" & posts$host_family == "Poaceae",]$.epred)/500
 
+prob_juv_over_emb <-sum(posts[posts$lifestage_general == "juvenile" & posts$host_family == "Orchidaceae",]$.epred > posts[posts$lifestage_general == "embryo" & posts$host_family == "Orchidaceae",]$.epred)/500
+
+prob_adult_over_emb <-sum(posts[posts$lifestage_general == "adult" & posts$host_family == "Orchidaceae",]$.epred > posts[posts$lifestage_general == "embryo" & posts$host_family == "Orchidaceae",]$.epred)/500
+
+prob_juv_over_adult <-sum(posts[posts$lifestage_general == "juvenile" & posts$host_family == "Orchidaceae",]$.epred > posts[posts$lifestage_general == "adult" & posts$host_family == "Orchidaceae",]$.epred)/500
 
 
 # making a combo plot for the paper
@@ -521,7 +529,7 @@ all_family_LS_effects_plot <- ggplot(data = prediction_df)+
   theme(axis.text.x = element_text(angle = 45, hjust = 1, size = rel(1.1)),
         strip.background = element_rect(fill = "grey95"))
 # all_family_LS_effects_plot
-ggsave(all_family_LS_effects_plot, filename = "Plots/all_family_LS_effects_plot.png", width = 7, height = 9)
+ggsave(all_family_LS_effects_plot, filename = "Plots/all_family_LS_effects_plot.png", width = 8, height = 9)
 
 # some posterior summaries
 posts <- tidybayes::epred_draws(fit, newdata = prediction_df, re_formula = ~ (1+lifestage_general|host_family) , ndraws = 500)
@@ -534,6 +542,7 @@ posts_summary <- posts %>%
 
 
 
+prob_juv_orchid_over_juvenile_everyone <-sum(posts[posts$lifestage_general == "juvenile" & posts$host_family == "Orchidaceae",]$.epred > posts[posts$lifestage_general == "juvenile" & posts$host_family != "Orchidaceae",]$.epred)/13000
 
 
 
@@ -548,6 +557,9 @@ posts_summary <- posts %>%
 
 
 
+##### old stuff
+
+#
 
 
 #######################################################################################################################
@@ -704,9 +716,6 @@ ggplot(correlations_df)+
 
 
 
-##### old stuff
-
-#
 
 
 
