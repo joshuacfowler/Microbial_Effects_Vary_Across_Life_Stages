@@ -373,13 +373,28 @@ ggsave(counts_plot, filename = "Plots/counts_plot.png", width = 7, height = 6)
 
 # summaries across the entire dataset
 order_summary <- effects_filtered %>% 
-  group_by(host_family) %>% 
+  group_by(host_order, host_kingdom) %>% 
+  summarize(n())
+
+family_summary <- effects_filtered %>%  
+  group_by(host_family, host_kingdom, symbiont_category) %>% 
+  summarize(n())
+
+genus_summary <- effects_filtered %>% 
+  group_by(host_genus, host_kingdom) %>% 
   summarize(n())
 taxonomy_summary <- effects_filtered %>% 
   group_by(.) %>% 
   dplyr::summarize(n_order = length(unique(host_order)),
                    n_family = length(unique(host_family)),
                    n_genus = length(unique(host_genus)))
+
+symbiont_summary <- effects_filtered %>% 
+  group_by(symbiont_category) %>% 
+  dplyr::summarize(n(),
+                   n_order = length(na.omit(unique(symbiont_order))),
+                   n_family = length(na.omit(unique(host_family))),
+                   n_genus = length(na.omit(unique(host_genus))))
 
 
 paper_summary <- effects_filtered %>% 
