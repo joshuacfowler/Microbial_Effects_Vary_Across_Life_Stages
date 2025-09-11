@@ -164,30 +164,37 @@ real_counts[real_counts$name == "All Negative",]
 family_permute_df <-  permute_df %>% 
   mutate(symbiota = paste(host_species_clean, symbiont_species, sep = "_")) %>% 
   group_by(host_family) %>% 
-  filter(length(unique(symbiota))>1)
+  filter(length(unique(symbiota))>1) %>% 
+  rename(real=positive) %>% 
+  select(host_family, host_species_clean, symbiont_species, metricXstage, symbiota, real) # re-ordering to put symbiota in front of "real"
+
+families_rank <- names(sort(table(family_permute_df$host_family), decreasing = TRUE))
+permuted_family <- list()
+for(i in 1:length(families_rank)){
+  filtered_family <- family_permute_df[family_permute_df$host_family == families_rank[i],]
+  permuted_family[[i]] <- as_tibble(cbind(filtered_family, replicate(500, sample(filtered_family$real))))  %>% 
+    pivot_longer(cols = real:`...506`, names_to = "permutation", values_to = "effect")  %>%  
+    group_by(host_family, host_species_clean, symbiont_species, permutation) %>% 
+    summarize(n_metricsXstage = length(unique(metricXstage)),
+              n_rows = n(),
+              n_pos = sum(effect == "positive"),
+              n_negative = sum(effect == "negative"),
+              prop_pos = n_pos/n_rows,
+              opposing = case_when(prop_pos == 1 ~ "all positive",
+                                   prop_pos == 0 ~ "all negative",
+                                   prop_pos >0 & prop_pos <1 ~ "opposing")) %>%  
+    filter(n_metricsXstage >1) %>% 
+    ungroup() %>% group_by(host_family, permutation) %>% 
+    summarize(`All Positive` =  sum(opposing == "all positive"),
+              `All Negative` = sum(opposing == "all negative"),
+              `Opposing` = sum(opposing == "opposing"))
   
+}
 
-permuted_family <- as_tibble(cbind(family_permute_df, replicate(500, sample(family_permute_df$positive)))) %>% 
-  rename(real=positive)  %>% 
-  pivot_longer(cols = real:`...506`, names_to = "permutation", values_to = "effect")  %>%  
-  group_by(host_family, host_species_clean, symbiont_species, permutation) %>% 
-  summarize(n_metricsXstage = length(unique(metricXstage)),
-            n_rows = n(),
-            n_pos = sum(effect == "positive"),
-            n_negative = sum(effect == "negative"),
-            prop_pos = n_pos/n_rows,
-            opposing = case_when(prop_pos == 1 ~ "all positive",
-                                 prop_pos == 0 ~ "all negative",
-                                 prop_pos >0 & prop_pos <1 ~ "opposing")) %>%  
-  filter(n_metricsXstage >1) %>% 
-  ungroup() %>% group_by(host_family, permutation) %>% 
-  summarize(`All Positive` =  sum(opposing == "all positive"),
-            `All Negative` = sum(opposing == "all negative"),
-            `Opposing` = sum(opposing == "opposing"))
+permuted_families <- bind_rows(permuted_family)
 
 
-
-permuted_family_long <- permuted_family %>% 
+permuted_family_long <- permuted_families %>% 
   # filter(permutation != "real") %>% 
   pivot_longer(cols = c(`All Positive`, `All Negative`, `Opposing`)) %>% 
   mutate(real_or = case_when(permutation == "real" ~ "Obs. data",
@@ -199,6 +206,7 @@ real_family_counts <- permuted_family_long %>% filter(permutation == "real")
 
 
 trt_order <- c("All Negative", "Opposing", "All Positive")
+
 
 
 # calculating quantiles from permuted data
@@ -221,8 +229,8 @@ permutation_family_plot <- ggplot(permuted_family_counts)+
   scale_alpha_manual(values = c(1,.1))+
   scale_shape_manual(values = c(16,21))+
   scale_size_manual(values = c(2,1))+
-  facet_wrap(~host_family, scales = "free", nrow = 3)+
-  # scale_x_continuous(breaks = function(x) seq(ceiling(x[1]), floor(x[2]), by = 1))+
+  facet_wrap(~factor(host_family, levels = families_rank), scales = "free", nrow = 4)+
+  scale_x_continuous(breaks = scales::breaks_pretty())+
   labs(x = "# of symbiota", y = "", color = "", fill = "", alpha = "", shape = "", size = "")+
   theme_bw()
 # permutation_family_plot
