@@ -32,8 +32,8 @@ effects_df <- read_csv("effects_df.csv") %>%
          se_RII = sd_RII/sqrt(total_n))
 
 # setting up color schemes
-metric_colors <- c("#77AADD", "#EE8866", "#EEDD88", "#FFAABB")
-stage_colors <- c("#44BB99", "#BBCC33", "#AAAA00", "#99DDFF")
+metric_colors <- c("#77AADD",  "#FFAABB","#EEDD88", "#EE8866")
+stage_colors <- c( "#44BB99","#BBCC33", "#AAAA00", "#99DDFF")
 
 ####### Plotting relationship between RII and precision or sd_RII #######
 ggplot(effects_df)+
@@ -336,29 +336,31 @@ ggplot(effects_df) +
   theme(axis.text = element_text(hjust = 1, angle = 45))
 
 effects_VR_count <- effects_filtered %>% 
-  group_by(metric_category, host_order) %>% 
-  summarize(count = n())
+  group_by(metric_category, host_family) %>% 
+  summarize(count = n()) %>% 
+  mutate()
 
 VR_count_plot <- ggplot(effects_VR_count)+
-  geom_point(aes( x = factor(metric_category, levels = c("growth", "survival", "reproduction", "recruitment")), y = host_order, size = count, color = metric_category))+
-  scale_color_manual(values = metric_colors)+
-  labs(x = "", y = "Host Order", color = "Vital Rate")+
+  geom_point(aes( x = factor(metric_category, levels = c("growth", "survival", "reproduction", "recruitment")), y = host_family, size = count, color = metric_category))+
+  scale_color_manual(values = metric_colors, breaks=c("growth", "survival", "reproduction", "recruitment"))+
+  labs(x = "", y = "Host Family", color = "Vital Rate")+
+  guides(colour = guide_legend(order = 1),
+         size = guide_legend(order = 2))+
   theme_bw()+
   theme(axis.text = element_text(hjust = 1, angle = 45, size = rel(1)))
 VR_count_plot
 
 
 effects_LS_count <- effects_filtered %>% 
-  group_by(lifestage_general, host_order) %>% 
+  group_by(lifestage_general, host_family) %>% 
   summarize(count = n())
 
 LS_count_plot <- ggplot(effects_LS_count)+
-  geom_point(aes( x= factor(lifestage_general, levels = c("embryo", "juvenile", "adult", "combines multiple")), y = host_order, size = count, color = lifestage_general))+
-  scale_color_manual(values = c("embryo" = stage_colors[1],
-                                "juvenile" = stage_colors[2],
-                                "adult" = stage_colors[3],
-                                "combines multiple" = stage_colors[4]))+
+  geom_point(aes( x= factor(lifestage_general, levels = c("embryo", "juvenile", "adult", "combines multiple")), y = host_family, size = count, color = lifestage_general))+
+  scale_color_manual(values = stage_colors, breaks = c("embryo", "juvenile", "adult", "combines multiple"))+
   labs(x = "", y = "", color = "Life Stage")+
+  guides(colour = guide_legend(order = 1),
+         size = guide_legend(order = 2))+
   theme_bw()+
   theme(axis.text = element_text(hjust = 1, angle = 45,size = rel(1)),
         axis.text.y = element_blank())
@@ -368,7 +370,7 @@ LS_count_plot
 counts_plot <- VR_count_plot + LS_count_plot + plot_annotation(tag_levels = "A")
 
 # counts_plot
-ggsave(counts_plot, filename = "Plots/counts_plot.png", width = 7, height = 6)
+ggsave(counts_plot, filename = "Plots/counts_plot.png", width = 7, height = 7)
 
 
 # summaries across the entire dataset
