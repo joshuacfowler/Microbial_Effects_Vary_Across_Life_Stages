@@ -11,14 +11,14 @@
 
 library(tidyverse)
 
-library(effsize) 
 
 library(lme4)
-library(rstan)
+#library(rstan)
+library(cmdstanr)
 library(brms)
+library(bayesplot)
 
 library(rotl)
-library(metafor)
 library(patchwork)
 
 invlogit<-function(x){exp(x)/(1+exp(x))}
@@ -31,7 +31,10 @@ logit = function(x) { log(x/(1-x)) }
 effects_df <- read_csv("effects_df.csv") %>% 
   filter(experiment_id != "112-1") %>% 
   filter(!is.na(sd_RII)) %>% 
-  mutate(RII_01 = (RII+1)/2)
+  mutate(RII = case_when(RII >= (1.0 - 1e-7) ~ 1.0,
+                         RII <= (-1.0 + 1e-7) ~ -1.0, TRUE ~ RII),
+         RII_01 = (RII+1)/2)
+
 
 
 
@@ -39,26 +42,28 @@ length(unique(effects_df$study_number))
 length(unique(effects_df$experiment_label))
 dim(effects_df)
 
+
+
 ######### plotting prelim data ########
-ggplot(effects_df) +
-  geom_histogram(aes(x = RII))+facet_wrap(~metric_category, scales = "free")+expand_limits(x = c(-1,1))
-ggsave("./20241012_metric_effects.png")
-
-ggplot(effects_df) +
-  geom_histogram(aes(x = lRR))+facet_wrap(~metric_category, scales = "free")
-
-ggplot(effects_df) +
-  geom_histogram(aes(x = cohensD))+facet_wrap(~metric_category, scales = "free")
-
-ggplot(effects_df) +
-  geom_histogram(aes(x = RII))+facet_wrap(~lifestage_general, scales = "free")+expand_limits(x = c(-1,1))
-ggsave("./20241012_lifestage_effects.png")
-
-
-familyXorder_layout <- ggplot(effects_df)+
-  geom_tile(aes(x = host_order, y = host_family))+
-  theme_minimal()+theme(axis.text.x = element_text(hjust = 1, angle = 45))
-ggsave(familyXorder_layout, filename = "Plots/familyXorder_layout.png")
+# ggplot(effects_df) +
+#   geom_histogram(aes(x = RII))+facet_wrap(~metric_category, scales = "free")+expand_limits(x = c(-1,1))
+# ggsave("./20241012_metric_effects.png")
+# 
+# ggplot(effects_df) +
+#   geom_histogram(aes(x = lRR))+facet_wrap(~metric_category, scales = "free")
+# 
+# ggplot(effects_df) +
+#   geom_histogram(aes(x = cohensD))+facet_wrap(~metric_category, scales = "free")
+# 
+# ggplot(effects_df) +
+#   geom_histogram(aes(x = RII))+facet_wrap(~lifestage_general, scales = "free")+expand_limits(x = c(-1,1))
+# ggsave("./20241012_lifestage_effects.png")
+# 
+# 
+# familyXorder_layout <- ggplot(effects_df)+
+#   geom_tile(aes(x = host_order, y = host_family))+
+#   theme_minimal()+theme(axis.text.x = element_text(hjust = 1, angle = 45))
+# ggsave(familyXorder_layout, filename = "Plots/familyXorder_layout.png")
 
 # prelim funnel plot
 # funnel(effects_df$RII, effects_df$var_RII, yaxis = "vi")
@@ -70,16 +75,17 @@ ggsave(familyXorder_layout, filename = "Plots/familyXorder_layout.png")
 
 # fitting brms
 ## run this code to optimize computer system settings for MCMC
-rstan_options(auto_write = FALSE)
+# rstan_options(auto_write = FALSE)
 options(mc.cores = parallel::detectCores())
-set.seed(123)
+# set.seed(123)
 
 ## MCMC settings
 mcmc_pars <- list(
-  iter = 5000, 
-  warmup = 2500, 
+  iter = 4000, 
+  warmup = 2000, 
   thin = 1, 
-  chains = 3
+  chains = 4,
+  seed = 123
 )
 
 
@@ -108,8 +114,38 @@ mcmc_pars <- list(
 
 
 
-#re-try with different syntax for nested effects
-fit <- brm(formula = RII|se(sd_RII, sigma = TRUE) ~ 0 + metric_category + (1|study_number) + (1|experiment_label) + (1+metric_category|host_family) + (1+metric_category|host_genus),
+# The following stan model encodes the equivalent model formula based on brms, but is sped up for truncation with some additional vectorization
+# make a data list compatible with brms syntax
+# mc_data_list <- make_standata(formula = bf(RII|trunc(lb = -1, ub = 1) +se(sd_RII, sigma = TRUE) ~ 0 + metric_category + (1|study_number) + (1|experiment_label) + (1+metric_category|host_family) + (1+metric_category|host_genus)), data = effects_df)
+# mc_data_list <- make_standata(formula = bf(RII|trunc(lb = -1, ub = 1) +se(sd_RII, sigma = TRUE) ~ 0 + metric_category + (0+metric_category||study_number) + (0+metric_category||experiment_label) + (0+metric_category||host_family) + (0+metric_category||host_genus)), data = effects_df)
+# mc_data_list$lb <- -1
+# mc_data_list$ub <- 1
+# mc_data_list$fitted <- 0
+# mc_data_list$inc_re <- c(1,1,1,1)
+# 
+# # model <- cmdstan_model(stan_file = "Analyses/zoib.stan")
+# model <- cmdstan_model(stan_file = "Analyses/ordered_beta.stan")
+# 
+# # model <- cmdstan_model(stan_file = "Analyses/trunc_01_normal.stan",
+# #                        cpp_options = list(stan_threads = TRUE)) # this option is for within chain parallelization
+# fit <- model$sample(data = mc_data_list,
+#                     seed = mcmc_pars$seed,
+#                     chains = mcmc_pars$chains,
+#                     # parallel_chains = mcmc_pars$chains,
+#                     # threads_per_chain = getOption("mc.cores", 1)/mcmc_pars$chains,
+#                     iter_warmup = mcmc_pars$warmup,
+#                     iter_sampling = mcmc_pars$iter,
+#                     refresh = 10, 
+#                     init = 0.1) # Forces initial values closer to zero/identity matrix)
+# saveRDS(fit, file = "Analyses/zoib_fit.Rds")
+# saveRDS(fit, file = "Analyses/zoib_fit_latent.Rds")
+
+# fit <- stan(file = "Analyses/trunc_01_normal.stan", data = mc_data_list,
+#                    iter = mcmc_pars$iter,
+#                    warmup = mcmc_pars$warmup,
+#                    chains = mcmc_pars$chains, 
+#                    thin = mcmc_pars$thin)
+fit <- brm(formula = bf(RII|se(sd_RII, sigma = TRUE) ~ 0 + metric_category + (1||study_number) + (1||experiment_label) + (1 + metric_category||host_family) + (1+metric_category||host_genus)),
              #(1|study_number) + (1|experiment_label) + (1+metric_category|host_order) + (1+metric_category|host_family),
            data = effects_df, 
            family = "gaussian",
@@ -120,6 +156,9 @@ fit <- brm(formula = RII|se(sd_RII, sigma = TRUE) ~ 0 + metric_category + (1|stu
            chains = mcmc_pars$chains,
            warmup = mcmc_pars$warmup, 
            control = list(adapt_delta = 0.99))
+
+stan_model <- stancode(fit)
+
 # summary(fit)
 
 
@@ -143,7 +182,74 @@ fit <- brm(formula = RII|se(sd_RII, sigma = TRUE) ~ 0 + metric_category + (1|stu
 
   
 # graphical posterior predictive check
-VR_ppc_overlay_plot <- pp_check(fit, type = "dens_overlay", ndraws = 100)+
+y_rep <- fit$draws("y_rep", format = "matrix")
+y_rep_true <- fit$draws("y_rep_true", format = "matrix")
+y <- mc_data_list$Y
+# y_rep <- fit$draws("sd_2", format = "matrix")
+# y_rep <- fit$draws("cutpoints", format = "matrix")
+
+cat("Observed -1.0 rate:", mean(y == -1.0), "\n")
+cat("Predicted -1.0 rate:", mean(y_rep == -1.0), "\n\n")
+
+cat("Observed 1.0 rate:", mean(y == 1.0), "\n")
+cat("Predicted 1.0 rate:", mean(y_rep == 1.0), "\n")
+
+df_rep <- effects_df %>% bind_cols(t(y_rep[sample(nrow(y_rep), size = 1000),])) %>% 
+  pivot_longer(cols = 76:last_col(), names_to = "draw", values_to = "y_rep") %>% 
+  group_by( metric_category, draw) %>% 
+  summarize(mean = mean(y_rep),
+            sd = sd(y_rep),
+            mean_cont = mean(y_rep[y_rep > -1 & y_rep < 1], na.rm = T),
+            prop_one = sum(y_rep == 1)/length(y_rep),
+            prop_neg = sum(y_rep == -1)/length(y_rep))
+
+df_rep_true <- effects_df %>% bind_cols(t(y_rep[sample(nrow(y_rep), size = 1000),])) %>% 
+  pivot_longer(cols = 76:last_col(), names_to = "draw", values_to = "y_rep") %>% 
+  group_by( metric_category, draw) %>% 
+  summarize(mean = mean(y_rep),
+            sd = sd(y_rep),
+            mean_cont = mean(y_rep[y_rep > -1 & y_rep < 1], na.rm = T),
+            prop_one = sum(y_rep == 1)/length(y_rep),
+            prop_neg = sum(y_rep == -1)/length(y_rep))
+
+data_summary <- effects_df %>% 
+  group_by(metric_category) %>%
+  summarize(mean = mean(RII),
+            sd = sd(RII),
+            mean_cont = mean(RII[RII > -1 & RII < 1], na.rm = T),
+            prop_one = sum(RII == 1)/length(RII),
+            prop_neg = sum(RII == -1)/length(RII))
+
+ppc_dens_overlay(mc_data_list$Y, y_rep[sample(1:dim(y_rep)[1], size = 100, replace = F),])
+ppc_dens_overlay(mc_data_list$Y, y_rep_true[sample(1:dim(y_rep_true)[1], size = 100, replace = F),])
+
+ppc_hist(mc_data_list$Y, y_rep[sample(1:dim(y_rep)[1], size = 10, replace = F),])
+
+ggplot(data = df_rep)+
+  geom_histogram(aes(x = mean))+
+  geom_vline(data = data_summary, aes(xintercept = mean))+
+  facet_wrap(~metric_category, scales = "free")
+
+
+ggplot(data = df_rep)+
+  geom_histogram(aes(x = mean_cont))+
+  geom_vline(data = data_summary, aes(xintercept = mean_cont))+
+  facet_wrap(~metric_category, scales = "free")
+
+ggplot(data = df_rep)+
+  geom_histogram(aes(x = prop_one))+
+  geom_vline(data = data_summary, aes(xintercept = prop_one))+
+  facet_wrap(~metric_category, scales = "free")
+
+ggplot(data = df_rep)+
+  geom_histogram(aes(x = prop_neg))+
+  geom_vline(data = data_summary, aes(xintercept = prop_neg))+
+  facet_wrap(~metric_category, scales = "free")
+
+fit$summary(variables = c("sd_2[2]", "cutpoints", "r_2_2"))
+
+
+VR_ppc_overlay_plot <- pp_check(object = fit, type = "dens_overlay", ndraws = 100)+
   labs(x = "RII", y = "Density")+
   theme_classic()
 VR_ppc_overlay_plot
@@ -157,15 +263,48 @@ ggsave(VR_ppc_hist_plot, filename = "Plots/VR_ppc_hist_plot_just_family.png", wi
 
 
 # getting and plotting the model prediction
-prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category),
-                              study_number = NA,
-                              experiment_id = NA,
-                              host_order =  NA,
+prediction_df <- expand.grid( RII =0, 
+                              metric_category = unique(effects_df$metric_category),
+                              study_number = 9999,
+                              experiment_label =9999,
+                              host_family =  9999,
+                              host_genus =  9999,
                               sd_RII = 0)
+pred_list <- make_standata(formula = bf(RII|se(sd_RII, sigma = TRUE) ~ 0 + metric_category + (0+metric_category||study_number) + (0+metric_category||experiment_label) + (0+metric_category||host_family) + (0+metric_category||host_genus)), data = prediction_df)
+
+names(pred_list) <- paste0(names(pred_list), "_new")
+
+prediction_data_list <- c(mc_data_list, pred_list)
+prediction_data_list$fitted <- 1
+prediction_data_list$inc_re <- c(0,0,0,0)
 
 # plotting overall mean prediction
-preds <- fitted(fit, newdata = prediction_df, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), re_formula = NA)
-prediction_df <- bind_cols(prediction_df, preds) #%>% 
+# pred_model <- cmdstan_model(stan_file = "Analyses/zoib_prediction.stan")
+pred_model <- cmdstan_model(stan_file = "Analyses/ordered_beta_prediction.stan")
+
+
+pred <- pred_model$generate_quantities(
+  fitted_params = fit$draws(),
+  data = prediction_data_list
+)
+
+draws <- t(pred$draws("y_fitted", format = "matrix")) %>% 
+  as_tibble() 
+
+pred_df <- bind_cols(prediction_df, draws) %>% 
+  pivot_longer(cols = `1`:`2000`,
+               names_to = "iter", values_to = "fitted") %>% 
+  mutate(host_family = levels(as.factor(effects_df$host_family))[host_family]
+  )
+
+
+prediction_summary <- pred_df %>% 
+  group_by(metric_category, host_family) %>% 
+  dplyr::summarize(Estimate = mean(fitted),
+                   Q2.5 = quantile(fitted, probs = 0.025),
+                   Q97.5 = quantile(fitted, probs = 0.975),
+                   n_draws = n(),
+                   prop_pos = (sum(fitted>0)/n_draws)*100)
 
 
 
@@ -173,7 +312,7 @@ prediction_df <- bind_cols(prediction_df, preds) #%>%
 metric_colors <- c("#77AADD", "#EE8866", "#EEDD88", "#FFAABB")
 stage_colors <- c("#44BB99", "#BBCC33", "#AAAA00", "#99DDFF")
 
-overall_VR_effects_plot <- ggplot(data = prediction_df)+
+overall_VR_effects_plot <- ggplot(data = prediction_summary)+
   geom_hline(aes(yintercept = 0), color = "black", lwd = .1)+
   geom_jitter(data = effects_df, aes( x= metric_category, y = RII, fill = metric_category), shape = 21, color = "white", width = .1, alpha = .8)+
   # geom_linerange(aes(x = metric_category, ymin = Q25, ymax = Q75), lwd = 1.2) + 
@@ -181,46 +320,93 @@ overall_VR_effects_plot <- ggplot(data = prediction_df)+
   geom_point(aes(x = metric_category, y = Estimate), shape=21, fill = "grey25", color = "white", size = 1.5) +
   scale_fill_manual(values = metric_colors)+
   guides(fill = "none")+
-  labs(x = "", color = "Vital Rate")+
+  labs(x = "", fill = "Vital Rate")+
   # facet_wrap(~host_order)+
   theme_bw()+
   theme(axis.text.x = element_text(angle = 45, hjust = 1, size = rel(1.1)))
 overall_VR_effects_plot
-ggsave(overall_VR_effects_plot, filename = "Plots/overall_VR_effects_plot_just_family.png", width = 7, height = 5)
+ggsave(overall_VR_effects_plot, filename = "Plots/overall_VR_effects_plot_zoib.png", width = 7, height = 5)
+
+
+
 
 
 # some posterior summaries
-posts <- tidybayes::epred_draws(fit, newdata = prediction_df, re_formula = NA, ndraws = 500)
-
-posts_summary <- posts %>%
-  group_by(metric_category) %>% 
-  summarize(n_draws = n(),
-            mean = mean(.epred),
-            prop_pos = (sum(.epred>0)/n_draws)*100)
+# posts <- fit$draws("b", format = "df") %>% 
+#   as_tibble() %>% 
+#   pivot_longer(cols = starts_with("b"),
+#                names_to = "parameter", values_to = "fitted") %>% 
+#   mutate(parameter_n = parse_number(parameter))
+# posts_df <- prediction_df %>% mutate(parameter_n = as.numeric(as.factor(metric_category))) %>% 
+#   left_join(posts)
+# 
+# posts_summary <- posts_df %>%
+#   group_by(metric_category) %>% 
+#   summarize(n_draws = n(),
+#             mean = mean(fitted),
+#             prop_pos = (sum(fitted>0)/n_draws)*100)
   
 
 
 
-# plotting prediction for specific orders
-# what are the 6 most common orders?
+# plotting prediction for specific families
+# what are the 6 most common familes?
 top_families <- names(sort(table(effects_df$host_family), decreasing = TRUE)[1:6])
 
+family_levels <- levels(as.factor(effects_df$host_family))
 
-prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category),
-                              study_number = NA,
-                              experiment_id = NA,
-                              host_family = c("Poaceae","Orchidaceae"),
+# Find the integer index for your target family (e.g., "Family_A")
+target_family <- c("Poaceae", "Orchidaceae")
+target_family_id   <- which(family_levels%in%target_family)
+
+prediction_df <- expand.grid( RII =0, 
+                              metric_category = unique(effects_df$metric_category),
+                              study_number = 9999,
+                              experiment_label = 9999,
+                              host_family = target_family_id,
+                              host_genus =  9999,
                               # host_genus = c("Dendrobium","Vanda"),
                               #host_order =  top_orders,
                               sd_RII = 0)
-preds <- fitted(fit, newdata = prediction_df, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), re_formula = ~ (1+metric_category|host_family) )
+pred_list <- make_standata(formula = bf(RII|trunc(lb = -1, ub = 1) +se(sd_RII, sigma = TRUE) ~ 0 + metric_category + (0+metric_category||study_number) + (0+metric_category||experiment_label) + (0+metric_category||host_family) + (0+metric_category||host_genus)), data = prediction_df)
 
-prediction_df <- bind_cols(prediction_df, preds) #%>% 
-# mutate(across(Estimate:Q97.5,~unscale(.)))
+names(pred_list) <- paste0(names(pred_list), "_new") 
+prediction_data_list <- list()
+prediction_data_list <- c(mc_data_list, pred_list)
+
+prediction_data_list$fitted <- 1
+prediction_data_list$inc_re <- c(0,1,0,0)
+
+pred <- pred_model$generate_quantities(
+  fitted_params = fit$draws(),
+  data = prediction_data_list
+)
+
+draws <- t(pred$draws("y_fitted", format = "matrix")) %>% 
+  as_tibble() 
+
+pred_df <- bind_cols(prediction_df, draws) %>% 
+  pivot_longer(cols = `1`:`2000`,
+               names_to = "iter", values_to = "fitted") %>% 
+  mutate(host_family = levels(as.factor(effects_df$host_family))[host_family]
+)
+
+
+prediction_summary <- pred_df %>% 
+  group_by(metric_category, host_family) %>% 
+  dplyr::summarize(Estimate = mean(fitted),
+                   Q2.5 = quantile(fitted, probs = 0.025),
+                   Q97.5 = quantile(fitted, probs = 0.975),
+                   n_draws = n(),
+                   prop_pos = (sum(fitted>0)/n_draws)*100)
+# 
+
+
+
 
 effects_df_filtered <- effects_df %>% filter(!is.na(RII), host_family %in% c("Poaceae","Orchidaceae" )) #host_genus == "Vanda"| host_genus == "Dendrobium")#host_order %in% top_orders)
 
-family_VR_effects_plot <- ggplot(data = prediction_df)+
+family_VR_effects_plot <- ggplot(data = prediction_summary)+
   geom_hline(aes(yintercept = 0), color = "black", lwd = .1)+
   geom_jitter(data = effects_df_filtered, aes( x= metric_category, y = RII, fill = metric_category), shape = 21, color = "white", width = .1, alpha = .8)+
   # geom_linerange(aes(x = metric_category, ymin = Q25, ymax = Q75), lwd = 1.2) + 
@@ -422,11 +608,11 @@ prob_adult_over_emb <-sum(posts[posts$lifestage_general == "adult",]$.epred > po
 
 
 
-# plotting prediction for specific orders
-# what are the 6 most common orders?
+# plotting prediction for specific families
+# what are the 6 most common families?
 
-# plotting prediction for specific orders
-# what are the 6 most common orders?
+# plotting prediction for specific families
+# what are the 6 most common families?
 top_families <- names(sort(table(effects_df$host_family), decreasing = TRUE)[1:6])
 
 
@@ -548,413 +734,6 @@ prob_juv_orchid_over_juvenile_everyone <-sum(posts[posts$lifestage_general == "j
 
 
 
-
-
-
-
-
-
-
-
-
-##### old stuff
-
-#
-
-
-#######################################################################################################################
-############ Evaluating how microbial symbionts effect correlations between vital rates/ stages     ###################
-#######################################################################################################################
-
-metrics_per_study <- effects_df %>% 
-  group_by(host_genus, symbiont_genus) %>% 
-  summarize(length(unique(metric_category)))
-
-vital_rate_estimates <- effects_df %>% 
-  filter(metric_description != "fluorescence intensity (CFU/ml)") %>% 
-  dplyr::select(-RII, -cohensD, -lRR, -var_RII, -sd_RII) %>% 
-  group_by(metric_category) %>% 
-  # standardizing the vital rate estimates
-  mutate(avg_mean_symbiotic = mean(mean_symbiotic),
-         sd_mean_symbiotic = sd(mean_symbiotic),
-         avg_mean_aposymbiotic = mean(mean_aposymbiotic),
-         sd_mean_aposymbiotic = sd(mean_aposymbiotic),
-         std_mean_symbiotic = (mean_symbiotic - avg_mean_symbiotic)/sd_mean_symbiotic,
-         std_mean_aposymbiotic = (mean_aposymbiotic - avg_mean_aposymbiotic)/sd_mean_aposymbiotic) %>% 
-  group_by(metric_category, experiment_label) %>% 
-  pivot_wider(names_from = c(metric_category), values_from = c(mean_symbiotic, mean_aposymbiotic, std_mean_symbiotic, std_mean_aposymbiotic,sd_symbiotic, sd_aposymbiotic, se_symbiotic, se_aposymbiotic, n_symbiotic, n_aposymbiotic)) 
-
-stage_estimates <- effects_df %>% 
-  filter(metric_description != "fluorescence intensity (CFU/ml)") %>% 
-  dplyr::select(-RII, -cohensD, -lRR, -var_RII, -sd_RII) %>% 
-  group_by(lifestage_general) %>% 
-  # standardizing the vital rate estimates
-  mutate(avg_mean_symbiotic = mean(mean_symbiotic),
-         sd_mean_symbiotic = sd(mean_symbiotic),
-         avg_mean_aposymbiotic = mean(mean_aposymbiotic),
-         sd_mean_aposymbiotic = sd(mean_aposymbiotic),
-         std_mean_symbiotic = (mean_symbiotic - avg_mean_symbiotic)/sd_mean_symbiotic,
-         std_mean_aposymbiotic = (mean_aposymbiotic - avg_mean_aposymbiotic)/sd_mean_aposymbiotic) %>% 
-pivot_wider(names_from = c(metric_category), values_from = c(mean_symbiotic, mean_aposymbiotic, std_mean_symbiotic, std_mean_aposymbiotic,sd_symbiotic, sd_aposymbiotic, se_symbiotic, se_aposymbiotic, n_symbiotic, n_aposymbiotic))
-
-
-
-
-# trying to visualize the potential conflicting vital rate responses
-
-ggplot(vital_rate_estimates)+
-  geom_jitter(aes(x = metric_category, y = std_mean_symbiotic))+
-  geom_jitter(aes(x = metric_category, y = std_mean_aposymbiotic), color = "red")
-
-
-ggplot(filter(vital_rate_estimates, std_mean_symbiotic<2.5))+
-  geom_jitter(aes(x = metric_category, y = std_mean_symbiotic))+
-  geom_jitter(aes(x = metric_category, y = std_mean_aposymbiotic), color = "red")
-
-
-
-ggplot(vital_rate_estimates)+
-  geom_jitter(aes(x = metric_category, y = mean_symbiotic))+
-  geom_jitter(aes(x = metric_category, y = mean_aposymbiotic), color = "red")
-
-
-
-
-ggplot(stage_estimates)+
-  geom_jitter(aes(x = lifestage_general, y = std_mean_symbiotic))+
-  geom_jitter(aes(x = lifestage_general, y = std_mean_aposymbiotic), color = "red")
-
-ggplot(filter(stage_estimates, std_mean_symbiotic<2.5))+
-  geom_jitter(aes(x = lifestage_general, y = std_mean_symbiotic))+
-  geom_jitter(aes(x = lifestage_general, y = std_mean_aposymbiotic), color = "red")
-
-
-ggplot(stage_estimates)+
-  geom_jitter(aes(x = lifestage_general, y = mean_symbiotic))+
-  geom_jitter(aes(x = lifestage_general, y = mean_aposymbiotic), color = "red")
-
-bf1 <- bf(std_mean_aposymbiotic_growth| mi() ~ (1|study_number) + (1|experiment_label))
-bf2 <- bf(std_mean_aposymbiotic_survival| mi() ~ (1|study_number) + (1|experiment_label))
-bf3 <- bf(std_mean_aposymbiotic_reproduction| mi() ~ (1|study_number) + (1|experiment_label))
-bf4 <- bf(std_mean_aposymbiotic_recruitment| mi() ~ (1|study_number) + (1|experiment_label))
-
-
-f2 <- 
-  brm(data = stage_estimates, 
-      family = gaussian,
-      mvbf(bf1,bf2,bf3,bf4, rescor = TRUE),
-      prior = c(#prior(gamma(2, .1), class = nu),
-                # prior(normal(0, 10), class = Intercept, resp = x),
-                # prior(normal(0, 10), class = Intercept, resp = y),
-                # prior(normal(0, 10), class = sigma, resp = x),
-                # prior(normal(0, 10), class = sigma, resp = y),
-                prior(lkj(1), class = rescor)),
-      iter = 2000, warmup = 500, chains = 4, cores = 4, 
-      seed = 1234)
-
-summary(f2)
-
-
-
-# getting and plotting the model prediction
-prediction_df <- expand.grid(
-                              study_number = NA,
-                              experiment_id = NA,
-                              host_order =  NA,
-                              sd_RII = 0)
-
-# plotting overall mean prediction
-preds <- fitted(f2, newdata = prediction_df, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), re_formula = NA)
-
-prediction_df <-  data.frame(t(preds[1,,1]), metric = dimnames(preds)[[3]][1]) #%>% 
-prediction_df <- bind_rows(prediction_df, data.frame(t(preds[1,,2]), metric = dimnames(preds)[[3]][2])) #%>% 
-prediction_df <- bind_rows(prediction_df, data.frame(t(preds[1,,3]), metric = dimnames(preds)[[3]][3])) #%>% 
-prediction_df <- bind_rows(prediction_df, data.frame(t(preds[1,,4]), metric = dimnames(preds)[[3]][4])) #%>% 
-
-
-
-
-ggplot(filter(vital_rate_estimates, std_mean_symbiotic<2.5))+
-  # geom_jitter(aes(x = metric_category, y = std_mean_symbiotic))+
-  # geom_jitter(aes(x = metric_category, y = std_mean_aposymbiotic), color = "red")+
-  geom_point(data = prediction_df, aes(x = metric, y = Estimate))+
-  geom_linerange(data = prediction_df, aes(x = metric, ymin = Q2.5, ymax = Q97.5))
-
-
-
-summary(f2)
-var_corr <- VarCorr(f2)
-
-correlations <- var_corr$residual__$cor
-
-correlations1 <- data.frame(as_tibble(correlations[,,1], rownames = 'from'), "to" = dimnames(correlations)[[1]][[1]])
-correlations2 <- data.frame(as_tibble(correlations[,,2], rownames = 'from'), "to" = dimnames(correlations)[[1]][[2]])
-correlations3 <- data.frame(as_tibble(correlations[,,3], rownames = 'from'), "to" = dimnames(correlations)[[1]][[3]])
-correlations4 <- data.frame(as_tibble(correlations[,,4], rownames = 'from'), "to" = dimnames(correlations)[[1]][[4]])
-
-correlations_df <- bind_rows(correlations1, correlations2, correlations3, correlations4)
-
-ggplot(correlations_df)+
-  geom_tile(aes(x = from, y = to, fill = Estimate))+
-  scale_fill_gradient2(low = "red", mid = "white", high = "blue", midpoint = 0, limits = c(-1,1))
-  # lims(fill = c(-1,1))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# Testing out simpler models
-fit <- lm(data = effects_df, formula = RII ~ 0 + metric_category)
-fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|study_number))
-fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|study_number) + (1|study_number:experiment_id) )
-fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|study_number) + (1|experiment_label) )
-fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|study_number) + (1|experiment_label) + (1|host_order/host_family))
-
-# fit <- lmer(data = effects_df, formula = RII ~ 0 + metric_category + (1|study_number) + (1|experiment_label) + (1|treatment_label) + (1|species_label) +(metric_category|study_number))
-
-summary(fit)
-# summary(fit)$r.squared
-
-
-
-# Getting predictions from the model
-
-prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category),
-                              study_number = NA,
-                              host_order = c("Poales", "Fabales"),
-                              host_family = NA)
-
-preds <- predict(fit, newdat = prediction_df, se.fit = TRUE, re.form =  ~(1|host_order))
-
-prediction_df <- bind_cols(prediction_df, preds) %>% 
-  mutate(upr = fit + 1.96*se.fit,
-         lwr = fit - 1.96*se.fit)
-
-
-ggplot(data = prediction_df)+
-  geom_jitter(data = effects_df, aes( x= metric_category, y = RII), color = "blue", width = .1, alpha = .2)+
-  geom_point(aes(x = metric_category, y = fit), size = 3, alpha = .6) +
-  geom_linerange(aes(x = metric_category, ymin = lwr, ymax = upr)) + theme_bw()
-
-
-# Fitting a model across life stages
-fit <- lm(data = effects_df, formula = RII ~ 0 + lifestage_general)
-fit <- lmer(data = effects_df, formula = RII ~ 0 + lifestage_description+ (1|study_number))
-fit <- lmer(data = effects_df, formula = RII ~ 0 + lifestage_description + (1|study_number) + (1|study_number:experiment_id) )
-
-summary(fit)
-
-
-# Getting predictions from the model
-
-prediction_df <- expand.grid( lifestage_general = unique(effects_df$lifestage_general),
-                              study_number = NA,
-                              experiment_id = NA)
-
-preds <- predict(fit, newdat = prediction_df, se.fit = TRUE, re.form =  NA)
-
-prediction_df <- bind_cols(prediction_df, preds) %>% 
-  mutate(upr = fit + 1.96*se.fit,
-         lwr = fit - 1.96*se.fit)
-
-
-ggplot(data = prediction_df)+
-  geom_jitter(data = effects_df, aes( x= lifestage_general, y = RII), color = "blue", width = .1, alpha = .2)+
-  geom_point(aes(x = lifestage_general, y = fit), size = 3, alpha = .6) +
-  geom_linerange(aes(x = lifestage_general, ymin = lwr, ymax = upr)) + theme_bw()
-
-
-  
-  # with Cohens D
-effects_df_filtered <- effects_df %>% filter(!is.na(cohensD))
-fit <- lmer(data = effects_df_filtered, formula = cohensD ~ 0 + metric_category + (1|study_number) + (1|study_number:experiment_id) )
-summary(fit)
-  
-  
-  # Getting predictions from the model
-  
-prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category),
-                              study_number = NA,
-                              experiment_id = NA)  
-
-preds <- predict(fit, newdat = prediction_df, se.fit = TRUE, re.form =  NA)
-
-  prediction_df <- bind_cols(prediction_df, preds) %>% 
-    mutate(upr = fit + 1.96*se.fit,
-           lwr = fit - 1.96*se.fit)
-  
-  ggplot(data = prediction_df)+
-    geom_jitter(data = effects_df_filtered, aes( x= metric_category, y = cohensD), color = "blue", width = .1, alpha = .2)+
-    geom_point(aes(x = metric_category, y = fit), size = 3) +
-    geom_linerange(aes(x = metric_category, ymin = lwr, ymax = upr)) + theme_bw()
-  
-  
-  
-
-
-  
-  
-  
-  
-  
-  
-  
-  
-
-
-
-
-
-# fitting brms
-## run this code to optimize computer system settings for MCMC
-rstan_options(auto_write = FALSE)
-options(mc.cores = parallel::detectCores())
-set.seed(123)
-
-## MCMC settings
-mcmc_pars <- list(
-  iter = 5000, 
-  warmup = 2500, 
-  thin = 1, 
-  chains = 3
-)
-
-# Version that does not incorporate measurement error
-fit <- brm(formula = lRR~ 0 + metric_category + (1|study_number) + (1|experiment_label),
-           data = effects_df, 
-           family = "gaussian",
-           prior = c(set_prior("normal(0,1)", class = "b"),
-                     set_prior("student_t(3, 0, 2.5)", class = "sd")),
-           iter = mcmc_pars$iter,
-           chains = mcmc_pars$chains,
-           warmup = mcmc_pars$warmup)
-
-
-# version incorporating measurement error
-effects_df_filtered <- effects_df %>% filter(!is.na(sd_RII))
-# fit <- brm(formula = RII|se(sd_RII, sigma = TRUE) ~ 0 + metric_category + (1+metric_category|study_number) + (1|study_number:experiment_id),
-fit <- brm(formula = RII|se(sd_RII, sigma = TRUE) ~ 0 + metric_category + (1|study_number) + (1|study_number:experiment_id),
-           data = effects_df_filtered,
-           family = "gaussian",
-           prior = c(set_prior("normal(0,1)", class = "b"),
-                     set_prior("student_t(3, 0, 2.5)", class = "sd")),
-           iter = mcmc_pars$iter,
-           chains = mcmc_pars$chains,
-           warmup = mcmc_pars$warmup)
-
-summary(fit)
-
-
-
-
-# Version rescaling the RII data and fitting to a beta distribution
-# rescale <- function(x){(x+1)/2}
-# unscale <- function(x){(x*2)-1}
-# 
-# effects_rescaled = effects_df %>% 
-#   mutate(RII_rescaled = rescale(RII))
-# fit <- brm(formula = RII_rescaled~ 0 + metric_category + (1|study_number) + (1|experiment_label),
-#            data = effects_rescaled, 
-#            family = "zero_one_inflated_beta",
-#            prior = c(set_prior("normal(0,1)", class = "b"),
-#                      set_prior("student_t(3, 0, 2.5)", class = "sd")),
-#            iter = mcmc_pars$iter,
-#            chains = mcmc_pars$chains,
-#            warmup = mcmc_pars$warmup)
-# 
-# 
-# 
-# # Version incorporating the measuremenerror through distributional regression
-# beta_formula <- bf(RII_rescaled ~ 0 + metric_category + (1|study_number) + (1|experiment_label),
-#               phi ~ 0 + metric_category + (1|study_number) + (1|experiment_label))
-# fit <- brm(formula = beta_formula,
-#            data = effects_rescaled, 
-#            family = zero_one_inflated_beta(),
-#            prior = c(set_prior("normal(0,1)", class = "b"),
-#                      set_prior("student_t(3, 0, 2.5)", class = "sd")),
-#            iter = mcmc_pars$iter,
-#            chains = mcmc_pars$chains,
-#            warmup = mcmc_pars$warmup)
-# 
-# # version incorporating measurement error
-# fit <- brm(formula = RII|se(pooled_se) ~ 0 + metric_category + (1+|study_number) + (1|study_number:experiment_id),
-#            data = effects_df,
-#            family = "gaussian",
-#            prior = c(set_prior("normal(0,1)", class = "b"),
-#                      set_prior("student_t(3, 0, 2.5)", class = "sd")),
-#             iter = mcmc_pars$iter,
-#            chains = mcmc_pars$chains,
-#            warmup = mcmc_pars$warmup)
-# 
-# summary(fit)
-
-
-get_prior(fit)
-prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category),
-                              study_number = NA,
-                              experiment_id = NA,
-                              sd_RII = 0)
-
-preds <- fitted(fit, newdata = prediction_df, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), re_formula = NA)
-
-prediction_df <- bind_cols(prediction_df, preds) #%>% 
-  # mutate(across(Estimate:Q97.5,~unscale(.)))
-
-
-ggplot(data = prediction_df)+
-  geom_jitter(data = effects_df_filtered, aes( x= metric_category, y = RII, color = metric_category), width = .1, alpha = .2)+
-  # geom_linerange(aes(x = metric_category, ymin = Q25, ymax = Q75), lwd = 1.2) + 
-  geom_linerange(aes(x = metric_category, ymin = Q2.5, ymax = Q97.5)) + 
-  geom_point(aes(x = metric_category, y = Estimate), size = 3) +
-  theme_bw()
-
-
-
-
-prediction_perstudy_df <- expand.grid( metric_category = unique(effects_df$metric_category),
-                                       study_number = unique(effects_df_filtered$study_number),                              experiment_id = NA,
-                              sd_RII = 0)
-
-preds <- fitted(fit, newdata = prediction_perstudy_df, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), re_formula = ~(1|study_number))
-
-prediction_perstudy_df <- bind_cols(prediction_perstudy_df, preds) %>% 
-  group_by(metric_category) %>% 
-  arrange(Estimate) %>% 
-  mutate(ordered_id = row_number())
-
-ggplot(data = prediction_perstudy_df)+
-  # geom_linerange(aes(x = metric_category, ymin = Q25, ymax = Q75), lwd = 1.2) +
-  geom_vline(aes(xintercept = 0))+
-  geom_rect(data = prediction_df, aes(xmin=Q2.5, xmax=Q97.5, ymin=-Inf, ymax=Inf, fill = metric_category), alpha = .3)+
-  geom_vline(data = prediction_df, aes(xintercept = Estimate, color = metric_category))+
-  geom_linerange(aes(y = ordered_id, xmin = Q2.5, xmax = Q97.5), alpha = .7) +
-  geom_point(aes(x = Estimate, y = ordered_id), size = 1, alpha = .7) +
-  facet_wrap(~metric_category, scale = "free_y")+
-  theme_bw()
 
 
 
