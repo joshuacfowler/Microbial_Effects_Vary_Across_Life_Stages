@@ -18,7 +18,6 @@ library(tidyverse)
 effects_df <- read_csv("effects_df.csv")
 
 
-
 ####### calculating the proportion of opposing symbiotic effects within a particular study  #######
 # first we need to winnow down the data set to only those that have measurements of multiple metrics
 # also note that I need to investigate the cases with RII exactly = 0
@@ -118,14 +117,15 @@ permuted_quant <- permuted_long %>%
 
 permutation_plot <- ggplot(permuted_counts)+
   geom_jitter(aes(y = factor(name, levels = trt_order), x = value, color= real_or, fill = real_or, alpha = real_or, shape = real_or, size = real_or), height = .3, width = 0)+
-  geom_linerange(data = permuted_quant, aes( y = factor(name, levels = trt_order), xmin = Q02.5, xmax = Q97.5), lwd = .3)+
-  geom_point(data = permuted_quant, aes(y = factor(name, levels = trt_order), x = mean), shape = 18)+
-  geom_point(data = real_counts, aes(y = factor(name, levels = trt_order), x = value, color= real_or, fill = real_or, alpha = real_or, shape = real_or, size = real_or))+
+  geom_linerange(data = permuted_quant, aes( y = factor(name, levels = trt_order), xmin = Q02.5, xmax = Q97.5), lwd = .7)+
+  geom_point(data = permuted_quant, aes(y = factor(name, levels = trt_order), x = mean), shape = 18, size=3)+
+  geom_point(data = real_counts, aes(y = factor(name, levels = trt_order), x = value, color= real_or, fill = real_or, alpha = real_or, shape = real_or),size = 3)+
   scale_color_manual(values = c("red", "black"))+
   scale_fill_manual(values = c("red", NA))+
   scale_alpha_manual(values = c(1,.1))+
   scale_shape_manual(values = c(16,21))+
-  scale_size_manual(values = c(2,1))+
+  # scale_size_manual(values = c(2,1))+
+  guides(size = "none")+
   labs(x = "# of symbiota", y = "", color = "", fill = "", alpha = "", shape = "", size = "")+
   theme_bw()
 permutation_plot

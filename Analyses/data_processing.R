@@ -91,7 +91,7 @@ effects_calc_df <- raw_effects_df %>%
   mutate(symbiont_genus_clean = 
            case_when((symbiont_genus == "E.") | (symbiont_genus == "Epichloe\xa8") | (symbiont_genus == "Epichlo\xeb") |(symbiont_genus == "Epichloe¨")|(symbiont_genus == "Epichloë")~ "Epichloe",
                      (symbiont_genus == "AMF")|(symbiont_genus == "Mycorrhizal")| grepl("DYXY", symbiont_genus) | grepl("DAXY", symbiont_genus) | grepl("DYSH", symbiont_genus)| grepl("AMG", symbiont_genus) ~ "mycorrhizal fungi",
-                     (symbiont_genus == "Endophytic") ~ "endophytic fungi",
+                     (symbiont_genus == "Endophytic") ~ "endophytic bacteria",
                      (symbiont_genus == "NAB")|  (symbiont_genus %in% c("L1", "L12", "L-7Q", "L1+L-7Q", "L12+L-7Q")) ~ "plant growth promoting bacteria",
                      (symbiont_genus %in% c("Da-KP-0-1", "Ps-KT-0-1", "Epulorhiza.")) ~ "Epulorhiza",
                      (symbiont_genus == "Candidatus") ~ "Megaira",

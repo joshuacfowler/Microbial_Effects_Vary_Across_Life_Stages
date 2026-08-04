@@ -180,76 +180,9 @@ stan_model <- stancode(fit)
 # look into projpred for model comparison
 
 
-  
+
 # graphical posterior predictive check
-y_rep <- fit$draws("y_rep", format = "matrix")
-y_rep_true <- fit$draws("y_rep_true", format = "matrix")
-y <- mc_data_list$Y
-# y_rep <- fit$draws("sd_2", format = "matrix")
-# y_rep <- fit$draws("cutpoints", format = "matrix")
-
-cat("Observed -1.0 rate:", mean(y == -1.0), "\n")
-cat("Predicted -1.0 rate:", mean(y_rep == -1.0), "\n\n")
-
-cat("Observed 1.0 rate:", mean(y == 1.0), "\n")
-cat("Predicted 1.0 rate:", mean(y_rep == 1.0), "\n")
-
-df_rep <- effects_df %>% bind_cols(t(y_rep[sample(nrow(y_rep), size = 1000),])) %>% 
-  pivot_longer(cols = 76:last_col(), names_to = "draw", values_to = "y_rep") %>% 
-  group_by( metric_category, draw) %>% 
-  summarize(mean = mean(y_rep),
-            sd = sd(y_rep),
-            mean_cont = mean(y_rep[y_rep > -1 & y_rep < 1], na.rm = T),
-            prop_one = sum(y_rep == 1)/length(y_rep),
-            prop_neg = sum(y_rep == -1)/length(y_rep))
-
-df_rep_true <- effects_df %>% bind_cols(t(y_rep[sample(nrow(y_rep), size = 1000),])) %>% 
-  pivot_longer(cols = 76:last_col(), names_to = "draw", values_to = "y_rep") %>% 
-  group_by( metric_category, draw) %>% 
-  summarize(mean = mean(y_rep),
-            sd = sd(y_rep),
-            mean_cont = mean(y_rep[y_rep > -1 & y_rep < 1], na.rm = T),
-            prop_one = sum(y_rep == 1)/length(y_rep),
-            prop_neg = sum(y_rep == -1)/length(y_rep))
-
-data_summary <- effects_df %>% 
-  group_by(metric_category) %>%
-  summarize(mean = mean(RII),
-            sd = sd(RII),
-            mean_cont = mean(RII[RII > -1 & RII < 1], na.rm = T),
-            prop_one = sum(RII == 1)/length(RII),
-            prop_neg = sum(RII == -1)/length(RII))
-
-ppc_dens_overlay(mc_data_list$Y, y_rep[sample(1:dim(y_rep)[1], size = 100, replace = F),])
-ppc_dens_overlay(mc_data_list$Y, y_rep_true[sample(1:dim(y_rep_true)[1], size = 100, replace = F),])
-
-ppc_hist(mc_data_list$Y, y_rep[sample(1:dim(y_rep)[1], size = 10, replace = F),])
-
-ggplot(data = df_rep)+
-  geom_histogram(aes(x = mean))+
-  geom_vline(data = data_summary, aes(xintercept = mean))+
-  facet_wrap(~metric_category, scales = "free")
-
-
-ggplot(data = df_rep)+
-  geom_histogram(aes(x = mean_cont))+
-  geom_vline(data = data_summary, aes(xintercept = mean_cont))+
-  facet_wrap(~metric_category, scales = "free")
-
-ggplot(data = df_rep)+
-  geom_histogram(aes(x = prop_one))+
-  geom_vline(data = data_summary, aes(xintercept = prop_one))+
-  facet_wrap(~metric_category, scales = "free")
-
-ggplot(data = df_rep)+
-  geom_histogram(aes(x = prop_neg))+
-  geom_vline(data = data_summary, aes(xintercept = prop_neg))+
-  facet_wrap(~metric_category, scales = "free")
-
-fit$summary(variables = c("sd_2[2]", "cutpoints", "r_2_2"))
-
-
-VR_ppc_overlay_plot <- pp_check(object = fit, type = "dens_overlay", ndraws = 100)+
+VR_ppc_overlay_plot <- pp_check(fit, type = "dens_overlay", ndraws = 100)+
   labs(x = "RII", y = "Density")+
   theme_classic()
 VR_ppc_overlay_plot
@@ -263,48 +196,15 @@ ggsave(VR_ppc_hist_plot, filename = "Plots/VR_ppc_hist_plot_just_family.png", wi
 
 
 # getting and plotting the model prediction
-prediction_df <- expand.grid( RII =0, 
-                              metric_category = unique(effects_df$metric_category),
-                              study_number = 9999,
-                              experiment_label =9999,
-                              host_family =  9999,
-                              host_genus =  9999,
+prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category),
+                              study_number = NA,
+                              experiment_id = NA,
+                              host_order =  NA,
                               sd_RII = 0)
-pred_list <- make_standata(formula = bf(RII|se(sd_RII, sigma = TRUE) ~ 0 + metric_category + (0+metric_category||study_number) + (0+metric_category||experiment_label) + (0+metric_category||host_family) + (0+metric_category||host_genus)), data = prediction_df)
-
-names(pred_list) <- paste0(names(pred_list), "_new")
-
-prediction_data_list <- c(mc_data_list, pred_list)
-prediction_data_list$fitted <- 1
-prediction_data_list$inc_re <- c(0,0,0,0)
 
 # plotting overall mean prediction
-# pred_model <- cmdstan_model(stan_file = "Analyses/zoib_prediction.stan")
-pred_model <- cmdstan_model(stan_file = "Analyses/ordered_beta_prediction.stan")
-
-
-pred <- pred_model$generate_quantities(
-  fitted_params = fit$draws(),
-  data = prediction_data_list
-)
-
-draws <- t(pred$draws("y_fitted", format = "matrix")) %>% 
-  as_tibble() 
-
-pred_df <- bind_cols(prediction_df, draws) %>% 
-  pivot_longer(cols = `1`:`2000`,
-               names_to = "iter", values_to = "fitted") %>% 
-  mutate(host_family = levels(as.factor(effects_df$host_family))[host_family]
-  )
-
-
-prediction_summary <- pred_df %>% 
-  group_by(metric_category, host_family) %>% 
-  dplyr::summarize(Estimate = mean(fitted),
-                   Q2.5 = quantile(fitted, probs = 0.025),
-                   Q97.5 = quantile(fitted, probs = 0.975),
-                   n_draws = n(),
-                   prop_pos = (sum(fitted>0)/n_draws)*100)
+preds <- fitted(fit, newdata = prediction_df, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), re_formula = NA)
+prediction_df <- bind_cols(prediction_df, preds) #%>% 
 
 
 
@@ -312,7 +212,7 @@ prediction_summary <- pred_df %>%
 metric_colors <- c("#77AADD", "#EE8866", "#EEDD88", "#FFAABB")
 stage_colors <- c("#44BB99", "#BBCC33", "#AAAA00", "#99DDFF")
 
-overall_VR_effects_plot <- ggplot(data = prediction_summary)+
+overall_VR_effects_plot <- ggplot(data = prediction_df)+
   geom_hline(aes(yintercept = 0), color = "black", lwd = .1)+
   geom_jitter(data = effects_df, aes( x= metric_category, y = RII, fill = metric_category), shape = 21, color = "white", width = .1, alpha = .8)+
   # geom_linerange(aes(x = metric_category, ymin = Q25, ymax = Q75), lwd = 1.2) + 
@@ -320,93 +220,49 @@ overall_VR_effects_plot <- ggplot(data = prediction_summary)+
   geom_point(aes(x = metric_category, y = Estimate), shape=21, fill = "grey25", color = "white", size = 1.5) +
   scale_fill_manual(values = metric_colors)+
   guides(fill = "none")+
-  labs(x = "", fill = "Vital Rate")+
+  labs(x = "", color = "Vital Rate")+
   # facet_wrap(~host_order)+
   theme_bw()+
   theme(axis.text.x = element_text(angle = 45, hjust = 1, size = rel(1.1)))
 overall_VR_effects_plot
-ggsave(overall_VR_effects_plot, filename = "Plots/overall_VR_effects_plot_zoib.png", width = 7, height = 5)
-
-
-
+ggsave(overall_VR_effects_plot, filename = "Plots/overall_VR_effects_plot_just_family.png", width = 7, height = 5)
 
 
 # some posterior summaries
-# posts <- fit$draws("b", format = "df") %>% 
-#   as_tibble() %>% 
-#   pivot_longer(cols = starts_with("b"),
-#                names_to = "parameter", values_to = "fitted") %>% 
-#   mutate(parameter_n = parse_number(parameter))
-# posts_df <- prediction_df %>% mutate(parameter_n = as.numeric(as.factor(metric_category))) %>% 
-#   left_join(posts)
-# 
-# posts_summary <- posts_df %>%
-#   group_by(metric_category) %>% 
-#   summarize(n_draws = n(),
-#             mean = mean(fitted),
-#             prop_pos = (sum(fitted>0)/n_draws)*100)
-  
+posts <- tidybayes::epred_draws(fit, newdata = prediction_df, re_formula = NA, ndraws = 500)
+
+posts_summary <- posts %>%
+  group_by(metric_category) %>% 
+  summarize(n_draws = n(),
+            mean = mean(.epred),
+            median = median(.epred),
+            Q2.5 = quantile(.epred, probs = c(0.025)),
+            Q97.5 = quantile(.epred, probs = c(0.975)),
+            prop_pos = (sum(.epred>0)/n_draws)*100)
 
 
 
-# plotting prediction for specific families
-# what are the 6 most common familes?
+
+# plotting prediction for specific orders
+# what are the 6 most common orders?
 top_families <- names(sort(table(effects_df$host_family), decreasing = TRUE)[1:6])
 
-family_levels <- levels(as.factor(effects_df$host_family))
 
-# Find the integer index for your target family (e.g., "Family_A")
-target_family <- c("Poaceae", "Orchidaceae")
-target_family_id   <- which(family_levels%in%target_family)
-
-prediction_df <- expand.grid( RII =0, 
-                              metric_category = unique(effects_df$metric_category),
-                              study_number = 9999,
-                              experiment_label = 9999,
-                              host_family = target_family_id,
-                              host_genus =  9999,
+prediction_df <- expand.grid( metric_category = unique(effects_df$metric_category),
+                              study_number = NA,
+                              experiment_id = NA,
+                              host_family = c("Poaceae","Orchidaceae"),
                               # host_genus = c("Dendrobium","Vanda"),
                               #host_order =  top_orders,
                               sd_RII = 0)
-pred_list <- make_standata(formula = bf(RII|trunc(lb = -1, ub = 1) +se(sd_RII, sigma = TRUE) ~ 0 + metric_category + (0+metric_category||study_number) + (0+metric_category||experiment_label) + (0+metric_category||host_family) + (0+metric_category||host_genus)), data = prediction_df)
+preds <- fitted(fit, newdata = prediction_df, probs = c(0.025, 0.25, 0.5, 0.75, 0.975), re_formula = ~ (1+metric_category|host_family) )
 
-names(pred_list) <- paste0(names(pred_list), "_new") 
-prediction_data_list <- list()
-prediction_data_list <- c(mc_data_list, pred_list)
-
-prediction_data_list$fitted <- 1
-prediction_data_list$inc_re <- c(0,1,0,0)
-
-pred <- pred_model$generate_quantities(
-  fitted_params = fit$draws(),
-  data = prediction_data_list
-)
-
-draws <- t(pred$draws("y_fitted", format = "matrix")) %>% 
-  as_tibble() 
-
-pred_df <- bind_cols(prediction_df, draws) %>% 
-  pivot_longer(cols = `1`:`2000`,
-               names_to = "iter", values_to = "fitted") %>% 
-  mutate(host_family = levels(as.factor(effects_df$host_family))[host_family]
-)
-
-
-prediction_summary <- pred_df %>% 
-  group_by(metric_category, host_family) %>% 
-  dplyr::summarize(Estimate = mean(fitted),
-                   Q2.5 = quantile(fitted, probs = 0.025),
-                   Q97.5 = quantile(fitted, probs = 0.975),
-                   n_draws = n(),
-                   prop_pos = (sum(fitted>0)/n_draws)*100)
-# 
-
-
-
+prediction_df <- bind_cols(prediction_df, preds) #%>% 
+# mutate(across(Estimate:Q97.5,~unscale(.)))
 
 effects_df_filtered <- effects_df %>% filter(!is.na(RII), host_family %in% c("Poaceae","Orchidaceae" )) #host_genus == "Vanda"| host_genus == "Dendrobium")#host_order %in% top_orders)
 
-family_VR_effects_plot <- ggplot(data = prediction_summary)+
+family_VR_effects_plot <- ggplot(data = prediction_df)+
   geom_hline(aes(yintercept = 0), color = "black", lwd = .1)+
   geom_jitter(data = effects_df_filtered, aes( x= metric_category, y = RII, fill = metric_category), shape = 21, color = "white", width = .1, alpha = .8)+
   # geom_linerange(aes(x = metric_category, ymin = Q25, ymax = Q75), lwd = 1.2) + 
@@ -431,6 +287,8 @@ posts_summary <- posts %>%
   group_by(host_family, metric_category) %>% 
   summarize(n_draws = n(),
             mean = mean(.epred),
+            Q2.5 = quantile(.epred, probs = c(0.025)),
+            Q97.5 = quantile(.epred, probs = c(0.975)),
             prop_pos = (sum(.epred>0)/n_draws)*100)
 
 
@@ -521,15 +379,17 @@ posts_summary <- posts %>%
   group_by(host_family, metric_category) %>% 
   summarize(n_draws = n(),
             mean = mean(.epred),
+            Q2.5 = quantile(.epred, probs = c(0.025)),
+            Q97.5 = quantile(.epred, probs = c(0.975)),
             prop_pos = (sum(.epred>0)/n_draws)*100)
-
 
 
 
 ##### Fitting a model for variation in microbial effect across life stage #######
 # Version that does  incorporate measurement error
 # for now filtering out unknown lifestages, but this is just an oversite in data extraction
-fit <- brm(formula = RII|se(sd_RII, sigma = TRUE) ~ 0 + lifestage_general + (1|study_number) + (1|experiment_label) + (1+lifestage_general|host_family) + (1+lifestage_general|host_genus),
+
+fit <- brm(formula = bf(RII|se(sd_RII, sigma = TRUE) ~ 0 + lifestage_general + (1||study_number) + (1||experiment_label) + (1+lifestage_general||host_family) + (1+lifestage_general||host_genus)),
            #(1|study_number) + (1|experiment_label) + (1+metric_category|host_order) + (1+metric_category|host_family),
            data = effects_df, 
            family = "gaussian",
@@ -599,6 +459,8 @@ posts_summary <- posts %>%
   group_by(lifestage_general) %>% 
   summarize(n_draws = n(),
             mean = mean(.epred),
+            Q2.5 = quantile(.epred, probs = c(0.025)),
+            Q97.5 = quantile(.epred, probs = c(0.975)),
             prop_pos = (sum(.epred>0)/n_draws)*100)
 
 
@@ -606,6 +468,7 @@ prob_juv_over_emb <-sum(posts[posts$lifestage_general == "juvenile",]$.epred > p
 
 prob_adult_over_emb <-sum(posts[posts$lifestage_general == "adult",]$.epred > posts[posts$lifestage_general == "embryo",]$.epred)/500
 
+prob_juv_over_adult <-sum(posts[posts$lifestage_general == "juvenile",]$.epred > posts[posts$lifestage_general == "adult",]$.epred)/500
 
 
 # plotting prediction for specific families
@@ -657,6 +520,8 @@ posts_summary <- posts %>%
   group_by(host_family, lifestage_general) %>% 
   summarize(n_draws = n(),
             mean = mean(.epred),
+            Q2.5 = quantile(.epred, probs = c(0.025)),
+            Q97.5 = quantile(.epred, probs = c(0.975)),
             prop_pos = (sum(.epred>0)/n_draws)*100)
 
 
